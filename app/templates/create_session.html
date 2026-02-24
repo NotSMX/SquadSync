@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Create Gaming Session</h2>
+
+<form method="POST">
+    <div class="mb-3">
+        <label class="form-label">Session Title</label>
+        <input type="text" name="title" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Date & Time</label>
+        <input type="datetime-local" name="datetime" class="form-control" required>
+    </div>
+
+    <button type="submit" class="btn btn-success">Create</button>
+</form>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>All Scheduled Sessions</h2>
+
+<table class="table table-striped mt-4">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Date/Time</th>
+            <th>Participants</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for data in sessions %}
+        <tr>
+            <td>{{ data.session.title }}</td>
+            <td>{{ data.session.datetime }}</td>
+            <td>{{ data.participants|length }}</td>
+            <td>
+                <a href="{{ url_for('main.view_session', session_id=data.session.id) }}" class="btn btn-primary btn-sm">
+                    View / RSVP
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

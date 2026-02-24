@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>KPI Dashboard</h2>
+
+<div class="row mt-4">
+
+    <div class="col-md-4">
+        <div class="card text-center shadow-sm">
+            <div class="card-body">
+                <h5>Total Users</h5>
+                <h2>{{ metrics.total_users }}</h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card text-center shadow-sm">
+            <div class="card-body">
+                <h5>Total Sessions</h5>
+                <h2>{{ metrics.total_sessions }}</h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card text-center shadow-sm">
+            <div class="card-body">
+                <h5>Core Action Rate</h5>
+                <h2>{{ metrics.core_action_rate }}</h2>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

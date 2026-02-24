@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>{{ session.title }}</h2>
+<p><strong>Scheduled for:</strong> {{ session.datetime }}</p>
+
+<hr>
+
+<h4>Your Availability</h4>
+
+<form method="POST" class="mb-4">
+    <button name="response" value="yes" class="btn btn-success">Yes</button>
+    <button name="response" value="maybe" class="btn btn-warning">Maybe</button>
+    <button name="response" value="no" class="btn btn-danger">No</button>
+</form>
+
+<hr>
+
+<h4>Participants</h4>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Username</th>
+            <th>Response</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in participants %}
+        <tr>
+            <td>{{ p.user.username }}</td>
+            <td>
+                {% if p.response == "yes" %}
+                    <span class="badge bg-success">Yes</span>
+                {% elif p.response == "maybe" %}
+                    <span class="badge bg-warning text-dark">Maybe</span>
+                {% else %}
+                    <span class="badge bg-danger">No</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endblock %}

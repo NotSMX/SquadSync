@@ -7,8 +7,8 @@ from flask import Blueprint, app, render_template, redirect, url_for, request
 from flask import session as flask_session
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash
-from app import db
-from app.models import User, Session, Availability
+from website import db
+from website.models import User, Session, Availability
 from datetime import datetime
 import uuid
 
@@ -85,7 +85,7 @@ def list_sessions():
 @main.route("/dashboard")
 @login_required
 def dashboard():
-    from app.metrics import calculate_metrics
+    from website.metrics import calculate_metrics
     metrics = calculate_metrics()
     return render_template("dashboard.html", metrics=metrics)
 

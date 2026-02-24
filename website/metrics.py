@@ -1,4 +1,4 @@
-from app.models import User, Session, Availability
+from website.models import User, Session, Availability
 
 def calculate_metrics():
     total_users = User.query.count()

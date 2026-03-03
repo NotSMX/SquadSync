@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="mb-4">Select Your Availability</h2>
+
+<div class="panel">
+    <div id="calendar"></div>
+
+    <form method="POST" id="availabilityForm">
+        <input type="hidden" name="availability_data" id="availabilityData">
+        <button type="submit" class="btn btn-primary">
+            Submit Availability
+        </button>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    let availabilityBlocks = [];
+
+    var calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+        initialView: 'timeGridWeek',
+        selectable: true,
+        editable: true,
+        nowIndicator: true,
+        height: 650,
+
+        select: function(info) {
+            let event = {
+                title: "Available",
+                start: info.startStr,
+                end: info.endStr
+            };
+
+            availabilityBlocks.push(event);
+            calendar.addEvent(event);
+        },
+
+        eventClick: function(info) {
+            info.event.remove();
+            availabilityBlocks = availabilityBlocks.filter(e =>
+                e.start !== info.event.startStr
+            );
+        }
+    });
+
+    calendar.render();
+
+    document.getElementById("availabilityForm").addEventListener("submit", function() {
+        document.getElementById("availabilityData").value =
+            JSON.stringify(availabilityBlocks);
+    });
+
+});
+</script>
+
+{% endblock %}

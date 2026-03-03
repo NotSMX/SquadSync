@@ -1,46 +1,195 @@
 {% extends "base.html" %}
-
 {% block content %}
-<h2>{{ session.title }}</h2>
-<p><strong>Scheduled for:</strong> {{ session.datetime }}</p>
 
-<hr>
+<div class="panel text-center mb-4 p-4">
+    {% if is_host %}
+        <p>You are the host!</p>
+    {% endif %}
+    <h2 class="mb-3">{{ session.title }}</h2>
 
-<h4>Your Availability</h4>
+    {% if session.final_time %}
+        <div class="mb-4">
+            <h5 class="mb-1">Final Time Locked</h5>
+            <p class="fw-bold">
+                {{ session.final_time.strftime("%A, %B %d, %Y at %I:%M %p") }}
+            </p>
+        </div>
+    {% endif %}
+    
 
-<form method="POST" class="mb-4">
-    <button name="response" value="yes" class="btn btn-success">Yes</button>
-    <button name="response" value="maybe" class="btn btn-warning">Maybe</button>
-    <button name="response" value="no" class="btn btn-danger">No</button>
-</form>
+    <!-- JOIN SESSION -->
+    <div class="mb-4 mt-4">
+        <h4 class="mb-2">Join Session</h4>
+        <form action="{{ url_for('main.join_session', session_id=session.id) }}" method="POST"
+              class="d-flex justify-content-center gap-2 flex-wrap">
+            <input type="text" name="name" placeholder="Your Name" required
+                   class="form-control game-input" style="max-width: 300px;">
+            <input type="email" name="email" placeholder="Your Email" required
+                   class="form-control game-input" style="max-width: 300px;">
+            <button type="submit" class="btn btn-primary">Join</button>
+        </form>
+    </div>
 
-<hr>
-
-<h4>Participants</h4>
-
-<table class="table table-bordered">
-    <thead>
-        <tr>
-            <th>Username</th>
-            <th>Response</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for p in participants %}
-        <tr>
-            <td>{{ p.user.username }}</td>
-            <td>
-                {% if p.response == "yes" %}
-                    <span class="badge bg-success">Yes</span>
-                {% elif p.response == "maybe" %}
-                    <span class="badge bg-warning text-dark">Maybe</span>
+    <!-- CONFIRMATION -->
+    {% if session.final_time %}
+        <div class="mt-3">
+            <h5>Confirm Final Time</h5>
+            {% for p in participants %}
+                {% set status = confirmations[p.id] %}
+                {% if p.token == participant.token %}
+                    <!-- Show buttons for self -->
+                    <form action="{{ url_for('main.confirm', session_id=session.id, token=p.token) }}"
+                        method="POST"
+                        class="mb-2 d-flex gap-2 justify-content-center flex-wrap align-items-center">
+                        <strong>{{ p.name }}</strong>
+                        <span class="ms-2">Current: {{ status if status else 'No Response' }}</span>
+                        <button class="btn btn-outline-primary btn-sm" name="status" value="Yes">Yes</button>
+                        <button class="btn btn-outline-primary btn-sm" name="status" value="Maybe">Maybe</button>
+                        <button class="btn btn-outline-primary btn-sm" name="status" value="No">No</button>
+                    </form>
                 {% else %}
-                    <span class="badge bg-danger">No</span>
+                    <!-- Show other participants' confirmation -->
+                    <div class="mb-2 d-flex gap-2 justify-content-center flex-wrap align-items-center">
+                        <strong>{{ p.name }}</strong>
+                        <span class="badge 
+                                    {% if status == 'Yes' %}bg-success
+                                    {% elif status == 'Maybe' %}bg-warning
+                                    {% elif status == 'No' %}bg-danger
+                                    {% else %}bg-secondary{% endif %}">
+                            {{ status if status else 'No Response' }}
+                        </span>
+                    </div>
                 {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <!-- PARTICIPANTS -->
+    <div class="mb-4">
+        <h4 class="mb-3">Squad</h4>
+        <div class="d-flex flex-wrap justify-content-center gap-2">
+            {% set colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"] %}
+            {% for participant, blocks in grouped_availability.items() %}
+                {% set color = colors[loop.index0 % colors|length] %}
+                <div style="background: {{ color }}; color: #fff; padding: 6px 12px; border-radius: 999px; font-weight:600;">
+                    {{ participant.name }}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- SCHEDULE -->
+    <div>
+        <h4 class="mb-3">Squad Schedule</h4>
+        <div id="group-calendar" style="min-height: 400px;"></div>
+    </div>
+
+    <!-- INVITE LINKS PANEL -->
+    {% if token %}
+    <div class="mt-4 p-3 border rounded">
+        <h4 class="mb-3">Invite Links</h4>
+
+        {% if is_host %}
+        <!-- Public session link for inviting others -->
+        <div class="mb-3">
+            <label class="form-label">Public Join Link (anyone can join)</label>
+            <div class="d-flex gap-2 align-items-center">
+                <input type="text" readonly class="form-control" 
+                    value="{{ url_for('main.view_session', session_hash=session.hash_id, _external=True) }}">
+                <button class="btn btn-outline-secondary" onclick="copyLink(this)">Copy</button>
+            </div>
+            <small style="color: #555;">Send this link to your squad to join the session.</small>
+        </div>
+        {% endif %}
+
+
+        <!-- Personal link for the current participant -->
+        <div>
+            <label class="form-label">Your Personal Link</label>
+            <div class="d-flex gap-2 align-items-center">
+                <input type="text" readonly class="form-control" 
+                    value="{{ url_for('main.view_session', session_hash=session.hash_id, token=participant.token, _external=True) }}">
+                <button class="btn btn-outline-secondary" onclick="copyLink(this)">Copy</button>
+            </div>
+            <small style="color: #555;">Use this link to access or update your availability later.</small>
+        </div>
+    </div>
+    {% endif %}
+
+    <script>
+    function copyLink(btn) {
+        const input = btn.previousElementSibling;
+        input.select();
+        input.setSelectionRange(0, 99999); // for mobile
+        navigator.clipboard.writeText(input.value);
+        btn.textContent = "Copied!";
+        setTimeout(() => btn.textContent = "Copy", 1500);
+    }
+    </script>
+
+    <!-- HOST CONTROLS -->
+    {% if is_host %}
+    <div class="mt-4 p-3 border rounded bg-dark">
+        <h4 class="mb-3">Host Controls</h4>
+
+        <div class="row g-3">
+            <!-- Auto Pick -->
+            <div class="col-12 col-md-6">
+                <h5 class="mb-2">Auto Pick Time</h5>
+                <a href="{{ url_for('main.auto_pick', session_hash=session.hash_id, token=participant.token) }}"
+                class="btn btn-primary w-100">
+                    Auto Pick Best Time
+                </a>
+            </div>
+
+            <!-- Manual Pick -->
+            <div class="col-12 col-md-6">
+                <h5 class="mb-2">Manual Pick</h5>
+                <form action="{{ url_for('main.manual_pick', session_hash=session.hash_id, token=participant.token) }}" 
+                    method="POST" class="d-flex flex-column flex-sm-row gap-2">
+                    <input type="datetime-local" name="manual_time" required class="form-control">
+                    <button class="btn btn-success w-100 w-sm-auto">Set Time</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+
+        const calendarEl = document.getElementById('group-calendar');
+        const grouped = JSON.parse('{{ grouped_json|safe }}');
+        const colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"];
+        const events = [];
+
+        Object.keys(grouped).forEach((participant, i) => {
+            grouped[participant].forEach(block => {
+                events.push({
+                    title: participant,
+                    start: block.start,
+                    end: block.end,
+                    display: 'block',
+                    backgroundColor: colors[block.color_index % colors.length] + '80',
+                    borderColor: colors[block.color_index % colors.length],
+                    textColor: "#fff"
+                });
+            });
+        });
+
+        const calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'timeGridWeek',
+            height: 500,
+            slotMinTime: "08:00:00",
+            slotMaxTime: "23:00:00",
+            events: events,
+            nowIndicator: false
+        });
+
+        calendar.render();
+    });
+</script>
 
 {% endblock %}

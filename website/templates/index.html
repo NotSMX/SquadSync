@@ -1,8 +1,22 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="text-center">
-    <h1 class="mb-4">Coordinate Your Gaming Sessions</h1>
-    <a href="/create" class="btn btn-primary btn-lg">Create Session</a>
+{% block pre_content %}
+<div class="bg-slideshow">
+    <div class="bg-slide active"></div>
+    <div class="bg-slide"></div>
+    <div class="bg-slide"></div>
 </div>
+<div class="bg-overlay"></div>
+{% endblock %}
+
+{% block content %}
+<div class="text-center mt-5" style="position: relative; z-index: 1;">
+    <h1>SynQ</h1>
+    <p>Coordinate your next game session.</p>
+
+    <a href="/create" class="btn btn-primary me-2">I want to set up a session with my friends</a>
+    <a href="/sessions" class="btn btn-primary">I am looking for friends to play with</a>
+</div>
+
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
 {% endblock %}

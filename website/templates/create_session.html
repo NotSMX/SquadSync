@@ -1,19 +1,43 @@
 {% extends "base.html" %}
-
 {% block content %}
-<h2>Create Gaming Session</h2>
 
-<form method="POST">
-    <div class="mb-3">
-        <label class="form-label">Session Title</label>
-        <input type="text" name="title" class="form-control" required>
-    </div>
+<div class="panel game-panel">
+    <h2 class="mb-4">Create Gaming Session</h2>
 
-    <div class="mb-3">
-        <label class="form-label">Date & Time</label>
-        <input type="datetime-local" name="datetime" class="form-control" required>
-    </div>
+    <form method="POST" class="w-100">
+        
+        <div class="mb-4">
+            <label class="form-label">Your Username</label>
+            <input type="text" 
+                   name="name" 
+                   class="form-control game-input" 
+                   placeholder="Enter your name..."
+                   required>
+        </div>
+        
+        <div class="mb-4">
+            <label class="form-label">Your Email</label>
+            <input type="email" 
+                   name="email" 
+                   class="form-control game-input" 
+                   placeholder="Enter your email..."
+                   required>
+        </div>
 
-    <button type="submit" class="btn btn-success">Create</button>
-</form>
+        <div class="mb-4">
+            <label class="form-label">Session Title</label>
+            <input type="text" 
+                   name="title" 
+                   class="form-control game-input" 
+                   placeholder="Enter session name..."
+                   required>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100">
+            Create Session
+        </button>
+
+    </form>
+</div>
+
 {% endblock %}

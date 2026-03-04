@@ -8,9 +8,8 @@ Create Session → Join → Submit Availability → Auto Pick → Confirm
 import token
 
 from flask import Blueprint, render_template, redirect, session, url_for, request, flash
-from matplotlib.pyplot import title
 from website import db
-from website.models import Confirmation, Participant, Session, Availability
+from website.models import Confirmation, Participant, Session, Availability, GameVote
 from datetime import datetime, timedelta, timedelta
 from collections import defaultdict
 import json
@@ -23,9 +22,56 @@ main = Blueprint("main", __name__)
 def index():
     return render_template("index.html")
 
+@main.route("/dashboard")
+def dashboard():
+    from website.metrics import calculate_metrics
+    return render_template("dashboard.html", metrics=calculate_metrics())
+
+@main.route("/sessions")
+def list_sessions():
+    """Sessions list: redirect to home (no listing page yet)."""
+    return redirect(url_for("main.index"))
+
+def _ensure_game_election_schema():
+    """Ensure DB has columns/tables needed for game election (handles old SQLite DBs)."""
+    from sqlalchemy import text
+    with db.engine.connect() as conn:
+        for table, col, typ in [
+            ("session", "hash_id", "VARCHAR(32)"),
+            ("session", "host_id", "INTEGER"),
+            ("session", "final_time", "DATETIME"),
+            ("session", "chosen_game", "VARCHAR(120)"),
+            ("availability", "participant_id", "INTEGER"),
+            ("availability", "session_id", "INTEGER"),
+            ("availability", "start_time", "DATETIME"),
+            ("availability", "end_time", "DATETIME"),
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+    db.create_all()
+
+
+@main.route("/test-game-election")
+def test_game_election():
+    """Quick test route: creates one session + host and redirects to session page for game election testing."""
+    _ensure_game_election_schema()
+    session_obj = Session(title="Game election test")
+    db.session.add(session_obj)
+    db.session.commit()
+    host = Participant(name="Test Host", session_id=session_obj.id, email="test@test.com")
+    db.session.add(host)
+    db.session.commit()
+    session_obj.host_id = host.id
+    db.session.commit()
+    return redirect(url_for("main.view_session", session_hash=session_obj.hash_id, token=host.token))
+
 @main.route("/create", methods=["GET", "POST"])
 def create_session():
     if request.method == "POST":
+        _ensure_game_election_schema()
         title = request.form["title"]
         host_name = request.form["name"]
         email = request.form["email"]
@@ -48,10 +94,10 @@ def create_session():
         session.host_id = host_participant.id
         db.session.commit()
 
-        # Redirect host to availability page
+        # Redirect host to session page (game election, invite link, etc.); they can add availability from there
         return redirect(url_for(
-            "main.availability",
-            session_id=session.id,
+            "main.view_session",
+            session_hash=session.hash_id,
             token=host_participant.token
         ))
 
@@ -147,6 +193,15 @@ def view_session(session_hash):
         conf = Confirmation.query.filter_by(participant_id=p.id, session_id=game_session.id).first()
         confirmations[p.id] = conf.status if conf else None
 
+    # Game election: tally votes by game name, current participant's vote
+    game_votes_raw = GameVote.query.filter_by(session_id=game_session.id).all()
+    game_tally = defaultdict(int)
+    my_game_vote = None
+    for v in game_votes_raw:
+        game_tally[v.game_name.strip() or "(empty)"] += 1
+        if participant and v.participant_id == participant.id:
+            my_game_vote = v.game_name
+    game_tally = dict(sorted(game_tally.items(), key=lambda x: -x[1]))
 
     return render_template(
         'session.html',
@@ -157,7 +212,9 @@ def view_session(session_hash):
         token=participant.token if participant else None,
         grouped_availability=grouped,
         grouped_json=json.dumps(grouped_json),
-        confirmations=confirmations
+        confirmations=confirmations,
+        game_tally=game_tally,
+        my_game_vote=my_game_vote,
     )
 
 @main.route("/auto_pick/<session_hash>")
@@ -243,4 +300,39 @@ def confirm(session_id, token):
     db.session.commit()
     
     return redirect(url_for("main.view_session", session_hash=participant.session.hash_id, token=token))
+
+
+@main.route("/session/<session_hash>/vote_game", methods=["POST"])
+def vote_game(session_hash):
+    game_session = Session.query.filter_by(hash_id=session_hash).first_or_404()
+    token = request.args.get("token") or request.form.get("token")
+    participant = Participant.query.filter_by(session_id=game_session.id, token=token).first_or_404()
+    game_name = (request.form.get("game_name") or "").strip() or None
+    if not game_name:
+        flash("Enter a game name to vote.", "warning")
+        return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
+    vote = GameVote.query.filter_by(session_id=game_session.id, participant_id=participant.id).first()
+    if vote:
+        vote.game_name = game_name
+    else:
+        vote = GameVote(session_id=game_session.id, participant_id=participant.id, game_name=game_name)
+        db.session.add(vote)
+    db.session.commit()
+    flash("Vote saved.", "success")
+    return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
+
+
+@main.route("/session/<session_hash>/set_game", methods=["POST"])
+def set_game(session_hash):
+    game_session = Session.query.filter_by(hash_id=session_hash).first_or_404()
+    token = request.args.get("token") or request.form.get("token")
+    participant = Participant.query.filter_by(session_id=game_session.id, token=token).first_or_404()
+    if participant.id != game_session.host_id:
+        flash("Only the host can set the game.", "danger")
+        return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
+    game_name = (request.form.get("game_name") or "").strip() or None
+    game_session.chosen_game = game_name
+    db.session.commit()
+    flash("Game set." if game_name else "Game cleared.", "success")
+    return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
 

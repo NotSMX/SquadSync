@@ -1,36 +1,117 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>KPI Dashboard</h2>
+<style>
+  .dashboard-game {
+    background: linear-gradient(135deg, #0f0c29 0%, #1a0a2e 30%, #16213e 60%, #0f3460 100%);
+    min-height: 80vh;
+    border-radius: 16px;
+    padding: 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .dashboard-game::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image: radial-gradient(circle at 20% 80%, rgba(0, 255, 255, 0.06) 0%, transparent 50%),
+                      radial-gradient(circle at 80% 20%, rgba(255, 0, 128, 0.06) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .dashboard-game .dashboard-title {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 1.75rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, #00ffff, #ff00aa, #00ff88);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 1.5rem;
+  }
+  .dashboard-game .stat-card {
+    background: rgba(15, 20, 45, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 1.25rem;
+    text-align: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+  }
+  .dashboard-game .stat-card:hover {
+    transform: translateY(-4px);
+  }
+  .dashboard-game .stat-card.cyan { box-shadow: 0 0 20px rgba(0, 255, 255, 0.25); border-color: rgba(0, 255, 255, 0.4); }
+  .dashboard-game .stat-card.magenta { box-shadow: 0 0 20px rgba(255, 0, 128, 0.25); border-color: rgba(255, 0, 128, 0.4); }
+  .dashboard-game .stat-card.lime { box-shadow: 0 0 20px rgba(0, 255, 136, 0.25); border-color: rgba(0, 255, 136, 0.4); }
+  .dashboard-game .stat-card.orange { box-shadow: 0 0 20px rgba(255, 165, 0, 0.25); border-color: rgba(255, 165, 0, 0.4); }
+  .dashboard-game .stat-card.purple { box-shadow: 0 0 20px rgba(168, 85, 247, 0.25); border-color: rgba(168, 85, 247, 0.4); }
+  .dashboard-game .stat-card .stat-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .dashboard-game .stat-card.cyan .stat-label { color: #00ffff; }
+  .dashboard-game .stat-card.magenta .stat-label { color: #ff00aa; }
+  .dashboard-game .stat-card.lime .stat-label { color: #00ff88; }
+  .dashboard-game .stat-card.orange .stat-label { color: #ffa500; }
+  .dashboard-game .stat-card.purple .stat-label { color: #a855f7; }
+  .dashboard-game .stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+  }
+  .dashboard-game .stat-card .stat-hint {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 0.35rem;
+  }
+</style>
 
-<div class="row mt-4">
+<div class="dashboard-game">
+  <h2 class="dashboard-title">KPI Dashboard</h2>
 
+  <div class="row g-3 mb-4">
     <div class="col-md-4">
-        <div class="card text-center shadow-sm">
-            <div class="card-body">
-                <h5>Total Users</h5>
-                <h2>{{ metrics.total_users }}</h2>
-            </div>
-        </div>
+      <div class="stat-card cyan">
+        <div class="stat-label">Total Users</div>
+        <div class="stat-value">{{ metrics.total_users }}</div>
+      </div>
     </div>
-
     <div class="col-md-4">
-        <div class="card text-center shadow-sm">
-            <div class="card-body">
-                <h5>Total Sessions</h5>
-                <h2>{{ metrics.total_sessions }}</h2>
-            </div>
-        </div>
+      <div class="stat-card magenta">
+        <div class="stat-label">Sessions Created</div>
+        <div class="stat-value">{{ metrics.sessions_created }}</div>
+      </div>
     </div>
-
     <div class="col-md-4">
-        <div class="card text-center shadow-sm">
-            <div class="card-body">
-                <h5>Core Action Rate</h5>
-                <h2>{{ metrics.core_action_rate }}</h2>
-            </div>
-        </div>
+      <div class="stat-card lime">
+        <div class="stat-label">Confirmed Participants</div>
+        <div class="stat-value">{{ metrics.confirmed_participants }}</div>
+      </div>
     </div>
+  </div>
 
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="stat-card orange">
+        <div class="stat-label">Activation Rate</div>
+        <div class="stat-value">{{ metrics.activation_rate }}</div>
+        <div class="stat-hint">% users who created or confirmed for ≥1 session</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="stat-card purple">
+        <div class="stat-label">Repeat Usage</div>
+        <div class="stat-value">{{ metrics.repeat_usage }}</div>
+        <div class="stat-hint">% users who returned within 7 days</div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}

@@ -25,10 +25,12 @@ class Session(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     hash_id = db.Column(db.String(32), unique=True, default=lambda: uuid.uuid4().hex)
     title = db.Column(db.String(100))
+    datetime = db.Column(db.DateTime, nullable=True, default=lambda: datetime.now(timezone.utc))  # legacy/DB compat
     host_id = db.Column(db.Integer, db.ForeignKey('participant.id'))
     host = db.relationship('Participant', foreign_keys=[host_id])
     participants = db.relationship('Participant', backref='session', foreign_keys='Participant.session_id')
     final_time = db.Column(db.DateTime, nullable=True)
+    chosen_game = db.Column(db.String(120), nullable=True)  # elected game for this session
 
 class Participant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -60,3 +62,12 @@ class Confirmation(db.Model):
     participant_id = db.Column(db.Integer, db.ForeignKey('participant.id'))
     session_id = db.Column(db.Integer, db.ForeignKey('session.id'))
     status = db.Column(db.String(10))  # Yes / Maybe / No
+
+
+class GameVote(db.Model):
+    """One vote per participant per session (MVP: vote for one game name)."""
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('session.id'), nullable=False)
+    participant_id = db.Column(db.Integer, db.ForeignKey('participant.id'), nullable=False)
+    game_name = db.Column(db.String(120), nullable=False)
+    __table_args__ = (db.UniqueConstraint('session_id', 'participant_id', name='uq_game_vote_session_participant'),)

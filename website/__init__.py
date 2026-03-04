@@ -2,7 +2,7 @@
 This module initializes the Flask application and registers the main blueprint.
 """
 import os
-from flask import Flask, app
+from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_mail import Mail

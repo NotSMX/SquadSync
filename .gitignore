@@ -5,3 +5,5 @@ instance/*.db
 .env
 venv/
 __pycache__
+.venv/
+.vscode/

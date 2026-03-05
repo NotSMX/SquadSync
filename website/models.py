@@ -31,6 +31,7 @@ class Session(db.Model):
     participants = db.relationship('Participant', backref='session', foreign_keys='Participant.session_id')
     final_time = db.Column(db.DateTime, nullable=True)
     chosen_game = db.Column(db.String(120), nullable=True)  # elected game for this session
+    is_public = db.Column(db.Boolean, nullable=False, default=True)
 
 class Participant(db.Model):
     id = db.Column(db.Integer, primary_key=True)

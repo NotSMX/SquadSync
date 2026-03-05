@@ -1,30 +1,45 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>All Scheduled Sessions</h2>
 
-<table class="table table-striped mt-4">
-    <thead>
-        <tr>
-            <th>Title</th>
-            <th>Date/Time</th>
-            <th>Participants</th>
-            <th>Action</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for data in sessions %}
-        <tr>
-            <td>{{ data.session.title }}</td>
-            <td>{{ data.session.datetime }}</td>
-            <td>{{ data.participants|length }}</td>
-            <td>
-                <a href="{{ url_for('main.view_session', session_id=data.session.id) }}" class="btn btn-primary btn-sm">
-                    View / RSVP
-                </a>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="panel game-panel">
+    <h2 class="mb-4">Public Gaming Sessions</h2>
+
+    {% if sessions %}
+    <table class="table table-striped mt-3">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Created</th>
+                <th>Participants</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for data in sessions %}
+            <tr>
+                <td>{{ data.session.title }}</td>
+                <td>
+                    {% if data.session.datetime %}
+                        {{ data.session.datetime.strftime("%Y-%m-%d %H:%M") }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>{{ data.participants|length }}</td>
+                <td>
+                    <a href="{{ url_for('main.view_session', session_hash=data.session.hash_id) }}"
+                       class="btn btn-primary btn-sm">
+                        View Session
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="mt-3">No public sessions available yet.</p>
+    {% endif %}
+</div>
+
 {% endblock %}

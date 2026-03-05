@@ -29,8 +29,21 @@ def dashboard():
 
 @main.route("/sessions")
 def list_sessions():
-    """Sessions list: redirect to home (no listing page yet)."""
-    return redirect(url_for("main.index"))
+    """Sessions list: Lists all public sessions."""
+    public_sessions = Session.query.filter_by(is_public=True).all()
+
+    sessions_data = []
+
+    for s in public_sessions:
+        sessions_data.append({
+            "session": s,
+            "participants": s.participants
+        })
+
+    return render_template(
+        "sessions.html",
+        sessions=sessions_data
+    )
 
 def _ensure_game_election_schema():
     """Ensure DB has columns/tables needed for game election (handles old SQLite DBs)."""
@@ -76,8 +89,9 @@ def create_session():
         host_name = request.form["name"]
         email = request.form["email"]
 
+        is_public = "is_public" in request.form
         # Create session
-        session = Session(title=title)
+        session = Session(title=title, is_public=is_public)
         db.session.add(session)
         db.session.commit()
 

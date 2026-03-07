@@ -8,11 +8,11 @@
     <h2 class="mb-3">{{ session.title }}</h2>
 
     <!-- GAME ELECTION (choose which game to play - not time) -->
-    <div class="mb-4 mt-2 p-3 border rounded bg-light text-dark">
-        <h4 class="mb-1 text-dark fw-bold">What to play?</h4>
-        <p class="small mb-2 text-dark">Pick the game for this session (e.g. Valorant, Among Us).</p>
+    <div class="mb-4 mt-2 p-3 border rounded" style="background-color: #454545; border-color: #555;">
+        <h4 class="mb-1 fw-bold" style="color: #eee;">What to play?</h4>
+        <p class="small mb-2" style="color: #ccc;">Pick the game for this session (e.g. Valorant, Among Us).</p>
         {% if session.chosen_game %}
-            <p class="mb-0 fw-bold text-dark">We're playing: <strong>{{ session.chosen_game }}</strong></p>
+            <p class="mb-0 fw-bold" style="color: #fff;">We're playing: <strong>{{ session.chosen_game }}</strong></p>
             {% if is_host %}
                 <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-2">
                     <input type="hidden" name="game_name" value="">
@@ -27,11 +27,11 @@
                 </form>
             {% endif %}
             {% if game_tally %}
-                <p class="mb-1 small text-dark">Votes:</p>
-                <ul class="list-unstyled mb-0 text-dark">
+                <p class="mb-1 small" style="color: #ccc;">Votes:</p>
+                <ul class="list-unstyled mb-0">
                     {% for game_name, count in game_tally.items() %}
                         <li class="d-flex align-items-center gap-2 flex-wrap">
-                            <span class="text-dark">{{ game_name }}</span>
+                            <span style="color: #eee;">{{ game_name }}</span>
                             <span class="badge bg-secondary">{{ count }}</span>
                             {% if is_host %}
                                 <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="d-inline">
@@ -43,7 +43,7 @@
                     {% endfor %}
                 </ul>
             {% else %}
-                <p class="mb-0 small text-dark">No votes yet. Suggest a game above.</p>
+                <p class="mb-0 small" style="color: #aaa;">No votes yet. Suggest a game above.</p>
             {% endif %}
         {% endif %}
     </div>

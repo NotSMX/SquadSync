@@ -488,3 +488,72 @@ def set_game(session_hash):
     flash("Game set." if game_name else "Game cleared.", "success")
     return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
 
+@main.route("/session/<session_hash>/remove_availability", methods=["POST"])
+def remove_availability_from_calendar(session_hash):
+    """Remove one availability block from the calendar."""
+    
+    game_session = Session.query.filter_by(hash_id=session_hash).first_or_404()
+
+    token = request.form.get("token")
+    participant = Participant.query.filter_by(
+        session_id=game_session.id,
+        token=token
+    ).first_or_404()
+
+    start_str = (request.form.get("start") or "").strip()
+    end_str = (request.form.get("end") or "").strip()
+
+    is_xhr = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+    def fail(msg):
+        if is_xhr:
+            return {"ok": False, "error": msg}, 400
+        flash(msg, "warning")
+        return redirect(url_for("main.view_session",
+                                session_hash=session_hash,
+                                token=token))
+
+    if not start_str or not end_str:
+        return fail("Missing start or end time.")
+
+    start_str = start_str.replace("Z", "+00:00")
+    end_str = end_str.replace("Z", "+00:00")
+
+    try:
+        start_dt = datetime.fromisoformat(start_str)
+        end_dt = datetime.fromisoformat(end_str)
+    except ValueError:
+        return fail("Invalid time format.")
+
+    block = Availability.query.filter_by(
+        session_id=game_session.id,
+        participant_id=participant.id,
+        start_time=start_dt,
+        end_time=end_dt
+    ).first()
+
+    if not block:
+        return fail("Availability block not found.")
+
+    db.session.delete(block)
+    db.session.commit()
+
+    if is_xhr:
+        return {"ok": True}
+
+    flash("Availability removed.", "success")
+    return redirect(url_for("main.view_session",
+                            session_hash=session_hash,
+                            token=token))
+
+@main.route("/session/<session_hash>/availability_data")
+def availability_data(session_hash):
+    game_session = Session.query.filter_by(hash_id=session_hash).first_or_404()
+    grouped_json = {}
+    for i, p in enumerate(game_session.participants):
+        grouped_json[p.name] = [
+            {"start": b.start_time.isoformat(), "end": b.end_time.isoformat()}
+            for b in p.availabilities if b.start_time and b.end_time
+        ]
+    from flask import jsonify
+    return jsonify(grouped_json)

@@ -68,11 +68,11 @@
         </div>
     {% endif %}
 
-    {% if token %}
+    <!-- {% if token %}
     <p class="mb-2">
         <a href="{{ url_for('main.availability', session_id=session.id, token=token) }}">Set your availability</a> (when you can play)
     </p>
-    {% endif %}
+    {% endif %} -->
 
     <!-- CONFIRMATION -->
     {% if session.final_time %}
@@ -111,26 +111,25 @@
     <!-- PARTICIPANTS -->
     <div class="mb-4">
         <h4 class="mb-3">Squad</h4>
-        <div class="d-flex flex-wrap justify-content-center gap-2">
+        <div id="squad-list" class="d-flex flex-wrap justify-content-center gap-2">
             {% set colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"] %}
             {% for participant, blocks in grouped_availability.items() %}
                 {% set color = colors[loop.index0 % colors|length] %}
-                <div style="background: {{ color }}; color: #fff; padding: 6px 12px; border-radius: 999px; font-weight:600;">
+                <div data-name="{{ participant.name }}" style="background: {{ color }}; color: #fff; padding: 6px 12px; border-radius: 999px; font-weight:600;">
                     {{ participant.name }}
                 </div>
             {% endfor %}
         </div>
     </div>
-
+    
     <!-- SCHEDULE -->
     <div>
         <h4 class="mb-3">Squad Schedule</h4>
         {% if token %}
-        <p class="small mb-1" style="color: #fff;">Drag on the calendar to add when you're available (or use the blue link above). Anyone can pick the same time slots.</p>
+        <p class="small mb-1" style="color: #aaa;">Drag to add your availability. Click a block to remove it.</p>
+        <button id="clear-availability" class="btn btn-outline-danger btn-sm mb-2">✕ Clear my availability</button>
         {% endif %}
-        <div id="group-calendar" style="min-height: 450px; width: 100%;"
-             data-session-hash="{{ session.hash_id }}"
-             data-token="{{ token or '' }}"></div>
+        <div id="group-calendar" style="min-height: 450px; width: 100%;"></div>
     </div>
 
     <!-- INVITE LINKS PANEL -->
@@ -208,79 +207,7 @@
     window.squadScheduleHash = {{ session.hash_id|tojson }};
     window.squadScheduleMyName = {{ (participant.name if participant else '')|tojson }};
     </script>
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        var calendarEl = document.getElementById('group-calendar');
-        if (!calendarEl) return;
-        var grouped = {};
-        try {
-            grouped = typeof window.squadScheduleData === 'string' ? JSON.parse(window.squadScheduleData) : (window.squadScheduleData || {});
-        } catch (e) {
-            grouped = {};
-        }
-        var colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"];
-        var events = [];
-        Object.keys(grouped).forEach(function(participantName) {
-            var blocks = grouped[participantName] || [];
-                blocks.forEach(function(block) {
-                if (block.start && block.end) {
-                    events.push({
-                        title: participantName,
-                        start: block.start,
-                        end: block.end,
-                        display: 'background',
-                        backgroundColor: colors[(block.color_index || 0) % colors.length] + '99',
-                        borderColor: 'transparent'
-                    });
-                }
-            });
-        });
-        var token = window.squadScheduleToken || '';
-        var sessionHash = window.squadScheduleHash || '';
-        var myName = window.squadScheduleMyName || 'You';
-        var canSelect = !!token;
-        var calendar = new FullCalendar.Calendar(calendarEl, {
-            initialView: 'timeGridWeek',
-            height: 500,
-            slotMinTime: '06:00:00',
-            slotMaxTime: '24:00:00',
-            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
-            events: events,
-            nowIndicator: true,
-            selectable: canSelect,
-            selectMirror: canSelect,
-            selectOverlap: function() { return true; },
-            select: function(info) {
-                if (!canSelect || !sessionHash || !token) return;
-                var startStr = info.start.toISOString ? info.start.toISOString() : info.startStr;
-                var endStr = info.end.toISOString ? info.end.toISOString() : info.endStr;
-                var formData = new FormData();
-                formData.append('token', token);
-                formData.append('start', startStr);
-                formData.append('end', endStr);
-                fetch('/session/' + sessionHash + '/add_availability', {
-                    method: 'POST',
-                    body: formData,
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                }).then(function(res) {
-                    var ct = res.headers.get('Content-Type') || '';
-                    return (ct.indexOf('json') !== -1 && res.json) ? res.json() : res.text().then(function() { return { ok: res.ok }; });
-                }).then(function(data) {
-                    if (data && data.ok !== false) {
-                        calendar.addEvent({
-                            title: myName,
-                            start: info.start,
-                            end: info.end,
-                            display: 'background',
-                            backgroundColor: colors[0] + '99',
-                            borderColor: 'transparent'
-                        });
-                    }
-                }).catch(function() {});
-            }
-        });
-        calendar.render();
-    });
-    </script>
+    <link rel="stylesheet" href="/static/css/calendar.css">
+    <script src="/static/js/calendar.js" defer></script>
 
 {% endblock %}

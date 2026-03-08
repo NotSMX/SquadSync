@@ -1,0 +1,8 @@
+.fc .fc-highlight { background-color: var(--fc-selection-color, rgb(255,255,255)) !important; }
+.fc .fc-event-mirror { background-color: var(--my-color) !important; border-color: transparent !important; opacity: 0.85; }
+.fc-bg-event { opacity: 0.55; }
+.fc-event { cursor: pointer; }
+
+.fc-event:not(.fc-event-mine) {
+    pointer-events: none !important;
+}

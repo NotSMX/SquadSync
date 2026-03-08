@@ -126,7 +126,7 @@
     <div>
         <h4 class="mb-3">Squad Schedule</h4>
         {% if token %}
-        <p class="small mb-1" style="color: #fff;">Drag on the calendar to add when you're available (or use the blue link above).</p>
+        <p class="small mb-1" style="color: #fff;">Drag on the calendar to add when you're available (or use the blue link above). Anyone can pick the same time slots.</p>
         {% endif %}
         <div id="group-calendar" style="min-height: 450px; width: 100%;"
              data-session-hash="{{ session.hash_id }}"
@@ -184,6 +184,11 @@
 
         <div class="row g-3 justify-content-center">
             <div class="col-12 col-md-8 col-lg-6">
+                <h5 class="mb-2 fw-bold text-white">Auto Pick Time</h5>
+                <p class="text-white-50 small mb-2">Sets the session to a time when everyone is available.</p>
+                <a href="{{ url_for('main.auto_pick', session_hash=session.hash_id, token=participant.token) }}" class="btn btn-primary mb-3">Auto Pick Time</a>
+            </div>
+            <div class="col-12 col-md-8 col-lg-6">
                 <h5 class="mb-2 fw-bold text-white">Manual Pick Time</h5>
                 <form action="{{ url_for('main.manual_pick', session_hash=session.hash_id, token=participant.token) }}" 
                     method="POST" class="d-flex flex-column flex-sm-row gap-2 justify-content-center">
@@ -217,16 +222,15 @@
         var events = [];
         Object.keys(grouped).forEach(function(participantName) {
             var blocks = grouped[participantName] || [];
-            blocks.forEach(function(block) {
+                blocks.forEach(function(block) {
                 if (block.start && block.end) {
                     events.push({
                         title: participantName,
                         start: block.start,
                         end: block.end,
-                        display: 'block',
-                        backgroundColor: colors[(block.color_index || 0) % colors.length] + 'cc',
-                        borderColor: colors[(block.color_index || 0) % colors.length],
-                        textColor: '#fff'
+                        display: 'background',
+                        backgroundColor: colors[(block.color_index || 0) % colors.length] + '99',
+                        borderColor: 'transparent'
                     });
                 }
             });
@@ -245,6 +249,7 @@
             nowIndicator: true,
             selectable: canSelect,
             selectMirror: canSelect,
+            selectOverlap: function() { return true; },
             select: function(info) {
                 if (!canSelect || !sessionHash || !token) return;
                 var startStr = info.start.toISOString ? info.start.toISOString() : info.startStr;
@@ -258,15 +263,17 @@
                     body: formData,
                     headers: { 'X-Requested-With': 'XMLHttpRequest' }
                 }).then(function(res) {
-                    if (res.ok || res.redirected) {
+                    var ct = res.headers.get('Content-Type') || '';
+                    return (ct.indexOf('json') !== -1 && res.json) ? res.json() : res.text().then(function() { return { ok: res.ok }; });
+                }).then(function(data) {
+                    if (data && data.ok !== false) {
                         calendar.addEvent({
                             title: myName,
                             start: info.start,
                             end: info.end,
-                            display: 'block',
-                            backgroundColor: colors[0] + 'cc',
-                            borderColor: colors[0],
-                            textColor: '#fff'
+                            display: 'background',
+                            backgroundColor: colors[0] + '99',
+                            borderColor: 'transparent'
                         });
                     }
                 }).catch(function() {});

@@ -11,21 +11,24 @@ def notify_final_time(session):
         return 0, []
 
     for participant in session.participants:
+        if not (participant.email and participant.email.strip()):
+            continue
         confirm_url = url_for(
-            'main.confirm',
+            "main.confirm",
             session_id=session.id,
             token=participant.token,
-            _external=True 
+            _external=True,
         )
-
         msg = Message(
             subject=f"Confirm Final Time for {session.title}",
-            recipients=[participant.email],
-            body=f"Hi {participant.name},\n\n"
-                 f"The final time for the session '{session.title}' has been set to "
-                 f"{session.final_time.strftime('%A, %B %d, %Y at %I:%M %p')}.\n"
-                 f"Please confirm your availability using this link:\n{confirm_url}\n\n"
-                 "Thanks!"
+            recipients=[participant.email.strip()],
+            body=(
+                f"Hi {participant.name},\n\n"
+                f"The final time for the session '{session.title}' has been set to "
+                f"{session.final_time.strftime('%A, %B %d, %Y at %I:%M %p')}.\n"
+                f"Please confirm your availability using this link:\n{confirm_url}\n\n"
+                "Thanks!"
+            ),
         )
         try:
             mail.send(msg)

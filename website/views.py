@@ -10,7 +10,7 @@ import token
 from flask import Blueprint, render_template, redirect, session, url_for, request, flash
 from website import db
 from website.models import Confirmation, Participant, Session, Availability, GameVote
-from datetime import datetime, timedelta, timedelta
+from datetime import datetime, timedelta
 from collections import defaultdict
 import json
 
@@ -26,6 +26,16 @@ def index():
 def dashboard():
     from website.metrics import calculate_metrics
     return render_template("dashboard.html", metrics=calculate_metrics())
+
+
+@main.route("/reset-db", methods=["POST"])
+def reset_db():
+    """Drop all tables and recreate (for testing)."""
+    db.drop_all()
+    db.create_all()
+    flash("Database reset.", "success")
+    return redirect(url_for("main.dashboard"))
+
 
 @main.route("/sessions")
 def list_sessions():
@@ -257,6 +267,27 @@ def view_session(session_hash):
         my_game_vote=my_game_vote,
     )
 
+def _intersect_intervals(intervals_a, intervals_b):
+    """Return list of (start, end) that lie in both interval lists. Merged."""
+    out = []
+    for (a_s, a_e) in intervals_a:
+        for (b_s, b_e) in intervals_b:
+            s = max(a_s, b_s)
+            e = min(a_e, b_e)
+            if s < e:
+                out.append((s, e))
+    if not out:
+        return []
+    out.sort(key=lambda x: x[0])
+    merged = [out[0]]
+    for s, e in out[1:]:
+        if s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
 @main.route("/auto_pick/<session_hash>")
 def auto_pick(session_hash):
     session_obj = Session.query.filter_by(hash_id=session_hash).first_or_404()
@@ -266,24 +297,34 @@ def auto_pick(session_hash):
     if participant.id != session_obj.host_id:
         return "Unauthorized", 403
 
-    availabilities = Availability.query.filter_by(session_id=session_obj.id).all()
+    # Per-participant list of (start, end) for this session
+    participants_with_avail = []
+    for p in session_obj.participants:
+        blocks = [(a.start_time, a.end_time) for a in p.availabilities if a.session_id == session_obj.id and a.start_time and a.end_time]
+        if blocks:
+            participants_with_avail.append(blocks)
 
-    slot_counts = {}
+    if not participants_with_avail:
+        flash("No availability submitted yet. Ask participants to set their availability.", "warning")
+        return redirect(url_for("main.view_session", session_hash=session_obj.hash_id, token=participant.token))
 
-    for a in availabilities:
-        start = a.start_time
-        end = a.end_time
-        current = start
-        while current < end:
-            slot_counts[current] = slot_counts.get(current, 0) + 1
-            current += timedelta(minutes=30)  
+    # Intersection of all: only times when EVERY participant is free
+    overlap = participants_with_avail[0]
+    for other in participants_with_avail[1:]:
+        overlap = _intersect_intervals(overlap, other)
+        if not overlap:
+            break
 
-    if slot_counts:
-        # Pick the time with the max count
-        best_time = max(slot_counts, key=lambda k: slot_counts[k])
-        session_obj.final_time = best_time
-        db.session.commit()
-    
+    if not overlap:
+        flash("No time works for all participants. Try manual pick or ask everyone to add more availability.", "warning")
+        return redirect(url_for("main.view_session", session_hash=session_obj.hash_id, token=participant.token))
+
+    # Pick first overlap window and set session to its start
+    start, _ = overlap[0]
+    session_obj.final_time = start
+    db.session.commit()
+    flash(f"Session set to {start.strftime('%A, %B %d at %I:%M %p')} (time that works for everyone).", "success")
+
     # Notify participants (only when mail is configured)
     sent_count, failed = notify_final_time(session_obj)
     if sent_count > 0:
@@ -398,20 +439,31 @@ def add_availability_from_calendar(session_hash):
     participant = Participant.query.filter_by(session_id=game_session.id, token=token).first_or_404()
     start_str = (request.form.get("start") or "").strip()
     end_str = (request.form.get("end") or "").strip()
-    if not start_str or not end_str:
-        flash("Missing start or end time.", "warning")
+    is_xhr = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+    def fail_json(msg):
+        if is_xhr:
+            return {"ok": False, "error": msg}, 400
+        flash(msg, "warning")
         return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
+
+    def ok_redirect():
+        if is_xhr:
+            return {"ok": True}
+        flash("Availability added.", "success")
+        return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
+
+    if not start_str or not end_str:
+        return fail_json("Missing start or end time.")
     start_str = start_str.replace("Z", "+00:00")
     end_str = end_str.replace("Z", "+00:00")
     try:
         start_dt = datetime.fromisoformat(start_str)
         end_dt = datetime.fromisoformat(end_str)
     except ValueError:
-        flash("Invalid time format.", "warning")
-        return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
+        return fail_json("Invalid time format.")
     if start_dt >= end_dt:
-        flash("End must be after start.", "warning")
-        return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
+        return fail_json("End must be after start.")
     db.session.add(Availability(
         session_id=game_session.id,
         participant_id=participant.id,
@@ -419,8 +471,7 @@ def add_availability_from_calendar(session_hash):
         end_time=end_dt,
     ))
     db.session.commit()
-    flash("Availability added.", "success")
-    return redirect(url_for("main.view_session", session_hash=session_hash, token=token))
+    return ok_redirect()
 
 
 @main.route("/session/<session_hash>/set_game", methods=["POST"])

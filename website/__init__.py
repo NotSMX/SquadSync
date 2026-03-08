@@ -20,13 +20,15 @@ def create_app():
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+    email_user = os.environ.get("EMAIL_USER")
     app.config.update(
-        MAIL_SERVER='smtp.gmail.com',
+        MAIL_SERVER="smtp.gmail.com",
         MAIL_PORT=587,
         MAIL_USE_TLS=True,
-        MAIL_USERNAME=os.environ.get("EMAIL_USER"),
+        MAIL_USE_SSL=False,
+        MAIL_USERNAME=email_user,
         MAIL_PASSWORD=os.environ.get("EMAIL_PASSWORD"),
-        MAIL_DEFAULT_SENDER='no-reply@example.com'
+        MAIL_DEFAULT_SENDER=(email_user or "no-reply@example.com"),
     )
 
     mail.init_app(app)

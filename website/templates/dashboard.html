@@ -115,5 +115,12 @@
       </div>
     </div>
   </div>
+
+  <div class="mt-5 pt-4 border-top border-secondary">
+    <h5 class="text-white-50 mb-2">Testing</h5>
+    <form action="{{ url_for('main.reset_db') }}" method="POST" onsubmit="return confirm('Delete all data and reset the database?');">
+      <button type="submit" class="btn btn-outline-danger">Reset database</button>
+    </form>
+  </div>
 </div>
 {% endblock %}

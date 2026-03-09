@@ -3,43 +3,118 @@
 {% block content %}
 
 <div class="panel game-panel">
-    <h2 class="mb-4">Public Gaming Sessions</h2>
 
-    {% if sessions %}
-    <table class="table table-striped mt-3">
-        <thead>
-            <tr>
-                <th>Title</th>
-                <th>Created</th>
-                <th>Participants</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for data in sessions %}
-            <tr>
-                <td>{{ data.session.title }}</td>
-                <td>
-                    {% if data.session.datetime %}
-                        {{ data.session.datetime.strftime("%Y-%m-%d %H:%M") }}
-                    {% else %}
-                        —
-                    {% endif %}
-                </td>
-                <td>{{ data.participants|length }}</td>
-                <td>
-                    <a href="{{ url_for('main.view_session', session_hash=data.session.hash_id) }}"
-                       class="btn btn-primary btn-sm">
-                        View Session
-                    </a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-        <p class="mt-3">No public sessions available yet.</p>
-    {% endif %}
+<h2 class="mb-4">Public Gaming Sessions</h2>
+
+<input
+    type="text"
+    id="sessionSearch"
+    class="form-control session-search mb-4"
+    placeholder="Search sessions by title..."
+>
+
+{% if sessions %}
+<table class="table sessions-table" id="sessionsTable">
+<thead>
+<tr>
+<th>Title</th>
+<th>Host</th>
+<th>Game</th>
+<th>Scheduled Time</th>
+<th>Participants</th>
+<th>Actions</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for data in sessions %}
+<tr>
+
+<td class="session-title">
+{{ data.session.title }}
+</td>
+
+<td>
+{% if data.host %}
+{{ data.host.name }}
+{% else %}
+—
+{% endif %}
+</td>
+
+<td>
+{% if data.session.chosen_game %}
+{{ data.session.chosen_game }}
+{% else %}
+Not selected
+{% endif %}
+</td>
+
+<td>
+{% if data.session.final_time %}
+{{ data.session.final_time.strftime("%Y-%m-%d %H:%M") }}
+{% else %}
+TBD
+{% endif %}
+</td>
+
+<td>
+{{ data.participants|length }}
+</td>
+
+<td>
+
+<a
+href="{{ url_for('main.view_session', session_hash=data.session.hash_id) }}"
+class="btn btn-primary btn-sm me-2">
+View
+</a>
+
+<form method="POST"
+action="{{ url_for('main.join_session', session_id=data.session.id) }}"
+style="display:inline;">
+
+
+</form>
+
+</td>
+
+</tr>
+{% endfor %}
+
+</tbody>
+</table>
+{% else %}
+<p>No public sessions available.</p>
+{% endif %}
+
 </div>
+
+<script>
+
+const searchInput = document.getElementById("sessionSearch");
+
+searchInput.addEventListener("keyup", function() {
+
+let filter = searchInput.value.toLowerCase();
+
+let rows = document.querySelectorAll("#sessionsTable tbody tr");
+
+rows.forEach(function(row){
+
+let title = row.querySelector(".session-title").textContent.toLowerCase();
+
+if(title.includes(filter)){
+row.style.display = "";
+}else{
+row.style.display = "none";
+}
+
+});
+
+});
+
+</script>
 
 {% endblock %}

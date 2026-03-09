@@ -45,11 +45,24 @@ def reset_db():
 def list_sessions():
     """List all public sessions."""
     public_sessions = Session.query.filter_by(is_public=True).all()
-    sessions_data = [
-        {"session": s, "participants": s.participants}
-        for s in public_sessions
-    ]
-    return render_template("sessions.html", sessions=sessions_data)
+
+    sessions_data = []
+
+    for s in public_sessions:
+        host = None
+        if s.host_id:
+            host = Participant.query.get(s.host_id)
+
+        sessions_data.append({
+            "session": s,
+            "participants": s.participants,
+            "host": host
+        })
+
+    return render_template(
+        "sessions.html",
+        sessions=sessions_data
+    )
 
 
 def _ensure_game_election_schema():

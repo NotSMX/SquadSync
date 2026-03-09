@@ -236,3 +236,44 @@ hr {
 .panel {
     transition: transform 0.3s ease;
 }
+
+/* Sessions table dark theme */
+.sessions-table tbody td {
+    background-color: rgba(15, 17, 23, 0.8) !important;
+    color: white !important;
+}
+
+/* header styling */
+.sessions-table thead th {
+    background-color: rgba(20, 23, 32, 0.95);
+    color: white;
+    border-bottom: 1px solid rgba(70, 80, 110, 0.4);
+}
+
+/* optional stripe */
+.sessions-table tbody tr:nth-child(even) td {
+    background-color: rgba(25, 28, 36, 0.85) !important;
+}
+
+/* hover effect */
+.sessions-table tbody tr:hover td {
+    background-color: rgba(40, 45, 60, 0.9) !important;
+}
+
+/* Search bar styling */
+.session-search {
+    background-color: rgba(15, 17, 23, 0.8);
+    color: white;
+    border: 1px solid rgba(80, 90, 120, 0.4);
+}
+
+.session-search::placeholder {
+    color: rgba(200, 200, 200, 0.6);
+}
+
+.session-search:focus {
+    background-color: rgba(15, 17, 23, 0.9);
+    color: white;
+    border-color: #4c8bf5;
+    box-shadow: none;
+}

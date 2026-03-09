@@ -11,8 +11,10 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from sqlalchemy.exc import SQLAlchemyError
 from website import create_app, db
 from website.models import Session, Participant, Availability, Confirmation, GameVote
+from website.views import _intersect_intervals, _build_game_tally, _build_grouped_json, _notify_and_flash, _ensure_game_election_schema
 
 
 @pytest.fixture
@@ -690,4 +692,145 @@ def test_auto_pick_no_overlap(client, sample_session, monkeypatch, app):
         f"/auto_pick/{sample_session['session_hash']}?token={sample_session['host_token']}",
         follow_redirects=True
     )
+    assert res.status_code == 200
+
+def test_intersect_intervals_merge():
+    """Overlapping intervals should merge correctly."""
+    a = [
+        (datetime(2025,1,1,10), datetime(2025,1,1,12))
+    ]
+    b = [
+        (datetime(2025,1,1,11), datetime(2025,1,1,13))
+    ]
+
+    result = _intersect_intervals(a, b)
+
+    assert len(result) == 1
+    assert result[0][0] == datetime(2025,1,1,11)
+    
+def test_intersect_intervals_none():
+    """No overlap should return empty list."""
+    a = [(datetime(2025,1,1,10), datetime(2025,1,1,11))]
+    b = [(datetime(2025,1,1,12), datetime(2025,1,1,13))]
+
+    result = _intersect_intervals(a, b)
+
+    assert result == []
+    
+def test_build_game_tally_empty_vote(app):
+    """Empty game name should count as '(empty)'."""
+    with app.app_context():
+        s = Session(title="Test")
+        db.session.add(s)
+        db.session.commit()
+
+        p = Participant(name="P", session_id=s.id)
+        db.session.add(p)
+        db.session.commit()
+
+        vote = GameVote(session_id=s.id, participant_id=p.id, game_name="")
+        db.session.add(vote)
+        db.session.commit()
+
+        tally, mine = _build_game_tally(s, p)
+
+        assert tally[0][0] == "(empty)"
+
+def test_grouped_json_skips_invalid(app):
+    """Blocks missing start/end should be skipped."""
+    with app.app_context():
+        s = Session(title="Test")
+        db.session.add(s)
+        db.session.commit()
+
+        p = Participant(name="P", session_id=s.id)
+        db.session.add(p)
+        db.session.commit()
+
+        a = Availability(
+            session_id=s.id,
+            participant_id=p.id,
+            start_time=None,
+            end_time=None
+        )
+        db.session.add(a)
+        db.session.commit()
+
+        grouped, grouped_json = _build_grouped_json(s)
+
+        assert grouped_json["P"] == []
+        
+# def test_notify_and_flash_failures(monkeypatch, app):
+#     """Failures should trigger flash messages."""
+#     with app.app_context():
+#         s = Session(title="Test")
+#         db.session.add(s)
+#         db.session.commit()
+
+#         monkeypatch.setattr(
+#             "website.views.notify_final_time",
+#             lambda s: (1, [("Bob", "SMTP error")])
+#         )
+
+#         _notify_and_flash(s)
+        
+# def test_ensure_schema_handles_error(monkeypatch, app):
+#     """Schema function should tolerate SQL errors."""
+#     class BrokenConn:
+#         def execute(self, *a, **k):
+#             raise SQLAlchemyError("fail")
+#         def commit(self): pass
+#         def rollback(self): pass
+
+#     class BrokenEngine:
+#         def connect(self):
+#             return BrokenConn()
+
+#     monkeypatch.setattr("website.views.db.engine", BrokenEngine())
+
+#     with app.app_context():
+#         _ensure_game_election_schema()
+        
+def test_add_availability_xhr(client, sample_session):
+    """XHR add availability should return JSON."""
+    start = datetime.now().isoformat()
+    end = (datetime.now() + timedelta(hours=1)).isoformat()
+
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/add_availability",
+        data={
+            "token": sample_session["host_token"],
+            "start": start,
+            "end": end
+        },
+        headers={"X-Requested-With": "XMLHttpRequest"}
+    )
+
+    assert res.status_code == 200
+    assert res.get_json()["ok"] is True
+    
+def test_remove_availability_xhr_success(client, sample_session, app):
+    """XHR removal should return JSON success."""
+    start = datetime.now()
+    end = start + timedelta(hours=1)
+
+    with app.app_context():
+        db.session.add(Availability(
+            session_id=sample_session["session_id"],
+            participant_id=sample_session["host_id"],
+            start_time=start,
+            end_time=end
+        ))
+        db.session.commit()
+
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/remove_availability",
+        data={
+            "token": sample_session["host_token"],
+            "start": start.isoformat(),
+            "end": end.isoformat()
+        },
+        headers={"X-Requested-With": "XMLHttpRequest"}
+    )
+
     assert res.status_code == 200

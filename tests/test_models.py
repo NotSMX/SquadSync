@@ -1,9 +1,13 @@
+"""
+test_models.py
+
+Tests for the SQLAlchemy models in website/models.py."""
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from website import create_app, db
 from sqlalchemy.exc import IntegrityError
+from website import create_app, db
 from website.models import User, Session, Participant, Availability, Confirmation, GameVote
 
 def test_user_repr(app):
@@ -69,7 +73,7 @@ def test_availability_relationship(app):
 
         assert len(p.availabilities) == 1
         assert "<Availability" in repr(a)
-        
+
 def test_confirmation_repr(app):
     """Confirmation repr should include status."""
 
@@ -87,7 +91,7 @@ def test_confirmation_repr(app):
         db.session.commit()
 
         assert repr(c) == "<Confirmation yes>"
-        
+
 def test_game_vote_unique_constraint(app):
     """A participant should only vote once per session."""
 

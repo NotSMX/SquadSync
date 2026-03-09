@@ -18,7 +18,6 @@ from website.utils import notify_final_time
 
 main = Blueprint("main", __name__)
 
-
 @main.route("/")
 def index():
     """Render the homepage."""

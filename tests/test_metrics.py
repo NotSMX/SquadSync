@@ -5,8 +5,10 @@ Unit tests for website/metrics.py
 """
 
 # pylint: disable=redefined-outer-name
+# pylint: disable=import-outside-toplevel
 # pylint: disable=unused-argument
 # pylint: disable=unused-variable
+# pylint: disable=too-few-public-methods
 
 from datetime import datetime, timedelta, timezone
 
@@ -291,10 +293,13 @@ def test_collect_confirmed_keys_missing_participant(monkeypatch, app):
     from website.metrics import _collect_confirmed_keys
 
     class FakeQuery:
+        """Stub that returns a participant id but db.session.get returns None."""
         def distinct(self):
+            """Return self to allow chaining."""
             return self
         def all(self):
-            return [(999,)] 
+            """Return a list with one participant id."""
+            return [(999,)]
 
     monkeypatch.setattr("website.metrics.db.session.query", lambda *args, **kwargs: FakeQuery())
     monkeypatch.setattr("website.metrics.db.session.get", lambda *args, **kwargs: None)
@@ -342,12 +347,12 @@ def test_repeat_usage_duplicate_participant(app):
         db.session.add(p)
         db.session.commit()
 
-        participants = [p, p] 
+        participants = [p, p]
 
         result = _collect_repeat_usage(participants, 1)
 
     assert result >= 0
-    
+
 def test_repeat_usage_single_time(app):
     """Branch: participant with only one timestamp should not count as repeat."""
     from website.metrics import _collect_repeat_usage
@@ -368,7 +373,7 @@ def test_repeat_usage_single_time(app):
         result = _collect_repeat_usage([p], 1)
 
     assert result == 0
-    
+
 def test_activation_rate_zero_users(app):
     """Branch: activation rate when no users exist."""
     from website.metrics import _collect_activation_rate
@@ -377,13 +382,15 @@ def test_activation_rate_zero_users(app):
         rate = _collect_activation_rate(0, set())
 
     assert rate == 0
-    
+
 def test_repeat_usage_availability_query_failure(monkeypatch, app):
     """Branch: availability query raises SQL error."""
     from sqlalchemy.exc import SQLAlchemyError
 
     class BrokenAvailability:
+        """Stub that raises SQLAlchemyError on query."""
         def filter_by(self, **kwargs):
+            """Return self to allow chaining."""
             raise SQLAlchemyError("fail")
 
     monkeypatch.setattr("website.metrics.Availability.query", BrokenAvailability())
@@ -392,7 +399,7 @@ def test_repeat_usage_availability_query_failure(monkeypatch, app):
         metrics = calculate_metrics()
 
     assert metrics["repeat_usage"] == "0%"
-    
+
 def test_repeat_usage_duplicate_key_branch(app):
     """Trigger the seen_keys continue branch."""
     from website.metrics import _collect_repeat_usage
@@ -411,7 +418,7 @@ def test_repeat_usage_duplicate_key_branch(app):
         result = _collect_repeat_usage(participants, 1)
 
     assert result >= 0
-    
+
 def test_calculate_metrics_confirmed_keys_exception(monkeypatch, app):
     """Force _collect_confirmed_keys to raise SQLAlchemyError."""
     from sqlalchemy.exc import SQLAlchemyError
@@ -425,7 +432,7 @@ def test_calculate_metrics_confirmed_keys_exception(monkeypatch, app):
         metrics = calculate_metrics()
 
     assert metrics["confirmed_participants"] == 0
-    
+
 def test_calculate_metrics_repeat_usage_exception(monkeypatch, app):
     """Force _collect_repeat_usage to raise SQLAlchemyError."""
     from sqlalchemy.exc import SQLAlchemyError

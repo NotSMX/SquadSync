@@ -30,7 +30,7 @@
                 <form action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" class="mb-3">
                     <div class="d-flex flex-column gap-2 text-start">
                         <input type="text" name="name" placeholder="Your name" required class="form-control" style="color: #333;">
-                        <input type="email" name="email" placeholder="Your email (optional)" class="form-control" style="color: #333;">
+                        <input type="email" name="email" placeholder="Your email" required class="form-control" style="color: #333;">
                         <input type="text" name="game_name" placeholder="Preferred game (e.g. Valorant, Among Us)" required class="form-control" style="color: #333;">
                         <button type="submit" class="btn btn-primary">Join & vote</button>
                     </div>

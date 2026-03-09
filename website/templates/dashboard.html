@@ -76,30 +76,38 @@
 <div class="dashboard-game">
   <h2 class="dashboard-title">KPI Dashboard</h2>
 
-    <div class="row g-3 mb-4">
-    <div class="col-md-4">
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
       <div class="stat-card cyan">
         <div class="stat-label">Unique participants (joined)</div>
         <div class="stat-value">{{ metrics.total_users }}</div>
         <div class="stat-hint">1 per person across sessions</div>
       </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
       <div class="stat-card magenta">
-        <div class="stat-label">Sessions Created</div>
+        <div class="stat-label">Sessions Created (Total)</div>
         <div class="stat-value">{{ metrics.sessions_created }}</div>
+        <div class="stat-hint">Total Sessions Created, Yay!</div>
       </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
+      <div class="stat-card orange">
+        <div class="stat-label">Availability only</div>
+        <div class="stat-value">{{ metrics.availability_only_participants }}</div>
+        <div class="stat-hint">Submitted time slots, no confirmation</div>
+      </div>
+    </div>
+    <div class="col-md-3">
       <div class="stat-card lime">
-        <div class="stat-label">Confirmed availability (unique)</div>
+        <div class="stat-label">Confirmed participants</div>
         <div class="stat-value">{{ metrics.confirmed_participants }}</div>
-        <div class="stat-hint">Submitted time slots</div>
+        <div class="stat-hint">RSVP’d for ≥1 session</div>
       </div>
     </div>
   </div>
 
-  <div class="row g-3">
+  <div class="row g-3 mb-4">
     <div class="col-md-6">
       <div class="stat-card orange">
         <div class="stat-label">Activation Rate</div>

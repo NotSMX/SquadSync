@@ -97,6 +97,16 @@ class Confirmation(db.Model):
     session_id = db.Column(db.Integer, db.ForeignKey('session.id'))
     status = db.Column(db.String(10))
 
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True), nullable=False,
+        default=lambda context: context.get_current_parameters()['created_at'],
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
     def __repr__(self):
         """Return string representation."""
         return f"<Confirmation {self.status}>"

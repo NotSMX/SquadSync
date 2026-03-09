@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="panel text-center mb-4 p-4">
+
+<div class="panel mb-4 p-4">
+
     <!-- HEADER -->
     <div class="session-header">
         {% if is_host %}<div><span class="host-badge">Host</span></div>{% endif %}
@@ -9,12 +11,13 @@
     </div>
 
     <!-- GAME ELECTION (choose which game to play - not time) -->
-    <div class="mb-4 mx-auto" style="max-width: 600px;">
+    <div class="mb-4 mt-2 mx-auto" style="max-width: 600px;">
     <div class="p-3 border rounded" style="background-color: #454545; border-color: #555;">
         <h4 class="mb-1 fw-bold" style="color: #eee;">What to play?</h4>
         <p class="small mb-2" style="color: #ccc;">Add your preferred game. The host will choose based on highest votes.</p>
         {% if session.chosen_game %}
             <p class="mb-0 fw-bold" style="color: #fff;">We're playing: <strong>{{ session.chosen_game }}</strong></p>
+            <div id="chosen-game-img" class="mt-2"></div>
             {% if is_host %}
                 <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-2">
                     <input type="hidden" name="game_name" value="">
@@ -33,26 +36,29 @@
                         <input type="text" name="name" placeholder="Your name" required class="form-control" style="color: #333;">
                         <input type="email" name="email" placeholder="Your email" required class="form-control" style="color: #333;">
                         <input type="text" name="game_name" placeholder="Preferred game (e.g. Valorant, Among Us)" required class="form-control" style="color: #333;">
-                        <button type="submit" class="btn btn-primary">Join & Vote</button>
+                        <button type="submit" class="btn btn-primary">Join & vote</button>
                     </div>
                 </form>
             {% endif %}
             {% if game_tally %}
-                <p class="mb-1 small" style="color: #ccc;">Votes:</p>
-                <ul class="list-unstyled mb-0">
+                <p class="mb-2 small" style="color: #ccc;">Votes:</p>
+                <div class="d-flex flex-wrap gap-3 justify-content-center" id="game-tally-list">
                     {% for game_name, count in game_tally %}
-                        <li class="d-flex align-items-center gap-2 flex-wrap">
-                            <span style="color: #eee;">{{ game_name }}</span>
-                            <span class="badge bg-secondary">{{ count }}</span>
-                            {% if is_host %}
-                                <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="d-inline">
-                                    <input type="hidden" name="game_name" value="{{ game_name }}">
-                                    <button type="submit" class="btn btn-outline-success btn-sm">Set as game</button>
-                                </form>
-                            {% endif %}
-                        </li>
+                        <div class="game-vote-card" data-game="{{ game_name }}">
+                            <img class="game-cover-img" src="" alt="{{ game_name }}" style="display:none;">
+                            <div class="game-vote-info">
+                                <span class="game-vote-name">{{ game_name }}</span>
+                                <span class="game-vote-count">{{ count }} vote{{ 's' if count != 1 else '' }}</span>
+                                {% if is_host %}
+                                    <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-1">
+                                        <input type="hidden" name="game_name" value="{{ game_name }}">
+                                        <button type="submit" class="btn btn-outline-success btn-med" style="font-size:0.7rem">Set ✓</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </div>
                     {% endfor %}
-                </ul>
+                </div>
             {% else %}
                 <p class="mb-0 small" style="color: #aaa;">No votes yet. Suggest a game above.</p>
             {% endif %}
@@ -68,12 +74,8 @@
     {% endif %}
 
     <!-- SQUAD + CONFIRMATION -->
-    <div class="mb-4 p-3 border rounded text-center">
+    <div class="mb-4 text-center">
         <h4 class="mb-3">Squad</h4>
-        {% if session.final_time %}
-            <p class="small mb-1" style="color: #aaa;">Please confirm your availability.</p>
-        {% endif %}
-        <div class="mb-3 pb-2 border-bottom border-secondary" style="border-color: rgba(255,255,255,0.2) !important;"></div>
         <div class="squad-grid" id="squad-list">
             {% set colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"] %}
             {% for p, blocks in grouped_availability.items() %}
@@ -100,19 +102,20 @@
 
     <!-- SCHEDULE -->
     <div class="mt-4 p-3 border rounded">
-        <h4 class="mb-3">Squad Schedule</h4>
+        <h4 class="mb-3 text-center">Squad Schedule</h4>
         {% if token %}
-        <p class="small mb-1" style="color: #aaa;">Drag to add your availability. Click a block to remove it.</p>
-        <button id="clear-availability" class="btn btn-outline-danger btn-sm mb-2">✕ Clear my availability</button>
+        <p class="small mb-1 text-center" style="color: #aaa;">Drag to add your availability. Click a block to remove it.</p>
+        <div class="text-center mb-2">
+            <button id="clear-availability" class="btn btn-outline-danger btn-sm">✕ Clear my availability</button>
+        </div>
         {% endif %}
         <div id="group-calendar" style="min-height: 450px; width: 100%;"></div>
     </div>
 
-    <!-- INVITE LINKS PANEL -->
+    <!-- INVITE LINKS -->
     {% if token %}
     <div class="mt-4 p-3 border rounded">
         <h4 class="mb-3">Invite Links</h4>
-
         {% if is_host %}
         <div class="mb-3">
             <label class="form-label">Public Join Link (anyone can join)</label>
@@ -124,7 +127,6 @@
             <small style="color: #555;">Send this link to your squad to join the session.</small>
         </div>
         {% endif %}
-
         <div>
             <label class="form-label">Your Personal Link</label>
             <div class="d-flex gap-2 align-items-center">
@@ -153,7 +155,6 @@
     <div class="mt-4 p-4 border rounded text-center" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 2px solid rgba(255,255,255,0.15); box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
         <h4 class="mb-2 fw-bold text-white" style="font-size: 1.5rem; letter-spacing: 0.05em;">HOST CONTROLS</h4>
         <div class="mb-3 pb-2 border-bottom border-secondary" style="border-color: rgba(255,255,255,0.2) !important;"></div>
-
         <div class="row g-3 justify-content-center">
             <div class="col-12 col-md-8 col-lg-6">
                 <h5 class="mb-2 fw-bold text-white">Auto Pick Time</h5>
@@ -174,13 +175,16 @@
 
 </div>
 
-    <script>
-    window.squadScheduleData = {{ grouped_json|tojson }};
-    window.squadScheduleToken = {{ (token or '')|tojson }};
-    window.squadScheduleHash = {{ session.hash_id|tojson }};
-    window.squadScheduleMyName = {{ (participant.name if participant else '')|tojson }};
-    </script>
-    <link rel="stylesheet" href="/static/css/calendar.css">
-    <script src="/static/js/calendar.js" defer></script>
+<script>
+window.squadScheduleData = {{ grouped_json|tojson }};
+window.squadScheduleToken = {{ (token or '')|tojson }};
+window.squadScheduleHash = {{ session.hash_id|tojson }};
+window.squadScheduleMyName = {{ (participant.name if participant else '')|tojson }};
+</script>
+<link rel="stylesheet" href="/static/css/calendar.css">
+<script src="/static/js/calendar.js" defer></script>
+
+<script>window.rawgApiKey = {{ rawg_key|tojson }};</script>
+<script src="/static/js/game_covers.js" defer></script>
 
 {% endblock %}

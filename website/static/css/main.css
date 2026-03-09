@@ -414,3 +414,56 @@ hr {
     letter-spacing: 0.03em;
     margin: 0;
 }
+
+/* ===== Game Vote Cards ===== */
+
+.game-vote-card {
+    width: 120px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #1a1d27;
+    border: 1px solid #2a2f3d;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.15s, border-color 0.15s;
+}
+
+.game-vote-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(123, 47, 247, 0.5);
+}
+
+.game-vote-card .game-cover-img {
+    width: 120px;
+    height: 90px;
+    object-fit: cover;
+    display: block !important;
+    background: #12141c;
+}
+
+.game-vote-card .game-cover-img[src=""] {
+    visibility: hidden;
+}
+
+.game-vote-info {
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.game-vote-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #e4e6eb;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.game-vote-count {
+    font-size: 0.72rem;
+    color: #7b2ff7;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}

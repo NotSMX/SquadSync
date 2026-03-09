@@ -25,6 +25,7 @@ def create_app():
     ).replace("postgres://", "postgresql://")
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["RAWG_API_KEY"] = os.environ.get("RAWG_API_KEY", "")
 
     email_user = os.environ.get("EMAIL_USER")
     app.config.update(

@@ -8,7 +8,7 @@ Create Session → Join → Submit Availability → Auto Pick → Confirm
 import json
 from datetime import datetime
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify
+from flask import Blueprint, current_app, render_template, redirect, url_for, request, flash, jsonify
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -274,7 +274,6 @@ def view_session(session_hash):
     }
 
     game_tally, my_game_vote = _build_game_tally(game_session, participant)
-
     return render_template(
         'session.html',
         session=game_session,
@@ -287,6 +286,7 @@ def view_session(session_hash):
         confirmations=confirmations,
         game_tally=game_tally,
         my_game_vote=my_game_vote,
+        rawg_key=current_app.config.get("RAWG_API_KEY", ""),
     )
 
 

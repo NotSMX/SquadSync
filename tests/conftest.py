@@ -1,3 +1,8 @@
+"""
+conftest.py
+
+Pytest fixtures for testing the SynQ application.
+"""
 import pytest
 from website import create_app, db
 

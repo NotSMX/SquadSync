@@ -277,3 +277,140 @@ hr {
     border-color: #4c8bf5;
     box-shadow: none;
 }
+
+.session-header {
+    text-align: center;
+    padding: 2.5rem 1rem 1.5rem;
+}
+
+
+.host-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(123, 47, 247, 0.12);
+    border: 1px solid rgba(123, 47, 247, 0.35);
+    color: #a97ff7;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 5px 16px;
+    border-radius: 999px;
+    margin-bottom: 1rem;
+}
+
+.host-badge::before {
+    content: '';
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #7b2ff7;
+    box-shadow: 0 0 8px #7b2ff7;
+    animation: badge-pulse 2s infinite;
+}
+
+@keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.2; }
+}
+
+.session-title {
+    font-size: clamp(2rem, 6vw, 3.5rem);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin: 0;
+    line-height: 1.1;
+    background: linear-gradient(130deg, #ffffff 30%, #9b6bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Squad cards */
+.squad-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+}
+
+.squad-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.squad-pill {
+    color: #fff;
+    padding: 7px 18px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+}
+
+.confirm-btns {
+    display: flex;
+    gap: 5px;
+}
+
+.confirm-btns button {
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px solid;
+    cursor: pointer;
+    background: transparent;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+}
+
+.btn-yes   { border-color: #22c55e; color: #22c55e; }
+.btn-yes:hover   { background: rgba(34,197,94,0.15); }
+.btn-maybe { border-color: #eab308; color: #eab308; }
+.btn-maybe:hover { background: rgba(234,179,8,0.15); }
+.btn-no    { border-color: #ef4444; color: #ef4444; }
+.btn-no:hover    { background: rgba(239,68,68,0.15); }
+
+.status-pill {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 12px;
+    border-radius: 999px;
+}
+
+.s-yes   { background: rgba(34,197,94,0.15);   color: #4ade80; border: 1px solid rgba(34,197,94,0.35);   }
+.s-maybe { background: rgba(234,179,8,0.15);   color: #fbbf24; border: 1px solid rgba(234,179,8,0.35);   }
+.s-no    { background: rgba(239,68,68,0.15);   color: #f87171; border: 1px solid rgba(239,68,68,0.35);   }
+.s-none  { background: rgba(107,114,128,0.12); color: #9ca3af; border: 1px solid rgba(107,114,128,0.3);  }
+
+/* Final time banner */
+.final-time-banner {
+    margin: 0 auto 1.5rem;
+    text-align: center;
+    padding: 1rem 1.5rem;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(123,47,247,0.12), rgba(123,47,247,0.04));
+    border: 1px solid rgba(123, 47, 247, 0.3);
+}
+
+.final-time-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #7b2ff7;
+    margin-bottom: 4px;
+}
+
+.final-time-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.03em;
+    margin: 0;
+}

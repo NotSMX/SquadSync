@@ -2,13 +2,14 @@
 {% block content %}
 
 <div class="panel text-center mb-4 p-4">
-    {% if is_host %}
-        <p>You are the host!</p>
-    {% endif %}
-    <h2 class="mb-3">{{ session.title }}</h2>
+    <!-- HEADER -->
+    <div class="session-header">
+        {% if is_host %}<div><span class="host-badge">Host</span></div>{% endif %}
+        <h1 class="session-title">{{ session.title }}</h1>
+    </div>
 
     <!-- GAME ELECTION (choose which game to play - not time) -->
-    <div class="mb-4 mt-2 mx-auto" style="max-width: 420px;">
+    <div class="mb-4 mx-auto" style="max-width: 600px;">
     <div class="p-3 border rounded" style="background-color: #454545; border-color: #555;">
         <h4 class="mb-1 fw-bold" style="color: #eee;">What to play?</h4>
         <p class="small mb-2" style="color: #ccc;">Add your preferred game. The host will choose based on highest votes.</p>
@@ -30,9 +31,9 @@
                 <form action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" class="mb-3">
                     <div class="d-flex flex-column gap-2 text-start">
                         <input type="text" name="name" placeholder="Your name" required class="form-control" style="color: #333;">
-                        <input type="email" name="email" placeholder="Your email (optional)" class="form-control" style="color: #333;">
+                        <input type="email" name="email" placeholder="Your email" required class="form-control" style="color: #333;">
                         <input type="text" name="game_name" placeholder="Preferred game (e.g. Valorant, Among Us)" required class="form-control" style="color: #333;">
-                        <button type="submit" class="btn btn-primary">Join & vote</button>
+                        <button type="submit" class="btn btn-primary">Join & Vote</button>
                     </div>
                 </form>
             {% endif %}
@@ -60,70 +61,45 @@
     </div>
 
     {% if session.final_time %}
-        <div class="mb-4">
-            <h5 class="mb-1">Final Time Locked</h5>
-            <p class="fw-bold">
-                {{ session.final_time.strftime("%A, %B %d, %Y at %I:%M %p") }}
-            </p>
+        <div class="final-time-banner">
+            <p class="final-time-label">📅 Session Locked</p>
+            <p class="final-time-value">{{ session.final_time.strftime("%A, %B %d, %Y at %I:%M %p") }}</p>
         </div>
     {% endif %}
 
-    <!-- {% if token %}
-    <p class="mb-2">
-        <a href="{{ url_for('main.availability', session_id=session.id, token=token) }}">Set your availability</a> (when you can play)
-    </p>
-    {% endif %} -->
-
-    <!-- CONFIRMATION -->
-    {% if session.final_time %}
-        <div class="mt-3">
-            <h5>Confirm Final Time</h5>
-            {% for p in participants %}
+    <!-- SQUAD + CONFIRMATION -->
+    <div class="mb-4 p-3 border rounded text-center">
+        <h4 class="mb-3">Squad</h4>
+        {% if session.final_time %}
+            <p class="small mb-1" style="color: #aaa;">Please confirm your availability.</p>
+        {% endif %}
+        <div class="mb-3 pb-2 border-bottom border-secondary" style="border-color: rgba(255,255,255,0.2) !important;"></div>
+        <div class="squad-grid" id="squad-list">
+            {% set colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"] %}
+            {% for p, blocks in grouped_availability.items() %}
+                {% set color = colors[loop.index0 % colors|length] %}
                 {% set status = confirmations[p.id] %}
-                {% if p.token == participant.token %}
-                    <!-- Show buttons for self -->
-                    <form action="{{ url_for('main.confirm', session_id=session.id, token=p.token) }}"
-                        method="POST"
-                        class="mb-2 d-flex gap-2 justify-content-center flex-wrap align-items-center">
-                        <strong>{{ p.name }}</strong>
-                        <span class="ms-2">Current: {{ status if status else 'No Response' }}</span>
-                        <button class="btn btn-outline-primary btn-sm" name="status" value="Yes">Yes</button>
-                        <button class="btn btn-outline-primary btn-sm" name="status" value="Maybe">Maybe</button>
-                        <button class="btn btn-outline-primary btn-sm" name="status" value="No">No</button>
-                    </form>
-                {% else %}
-                    <!-- Show other participants' confirmation -->
-                    <div class="mb-2 d-flex gap-2 justify-content-center flex-wrap align-items-center">
-                        <strong>{{ p.name }}</strong>
-                        <span class="badge 
-                                    {% if status == 'Yes' %}bg-success
-                                    {% elif status == 'Maybe' %}bg-warning
-                                    {% elif status == 'No' %}bg-danger
-                                    {% else %}bg-secondary{% endif %}">
+                <div class="squad-card" data-name="{{ p.name }}">
+                    <div class="squad-pill" style="background: {{ color }};">{{ p.name }}</div>
+                    {% if session.final_time %}
+                        {% if p.token == participant.token %}
+                            <form action="{{ url_for('main.confirm', session_id=session.id, token=p.token) }}" method="POST" class="confirm-btns">
+                                <button class="btn-yes"   name="status" value="Yes">Yes</button>
+                                <button class="btn-maybe" name="status" value="Maybe">?</button>
+                                <button class="btn-no"    name="status" value="No">No</button>
+                            </form>
+                        {% endif %}
+                        <span class="status-pill {% if status == 'Yes' %}s-yes{% elif status == 'Maybe' %}s-maybe{% elif status == 'No' %}s-no{% else %}s-none{% endif %}">
                             {{ status if status else 'No Response' }}
                         </span>
-                    </div>
-                {% endif %}
-            {% endfor %}
-        </div>
-    {% endif %}
-
-    <!-- PARTICIPANTS -->
-    <div class="mb-4">
-        <h4 class="mb-3">Squad</h4>
-        <div id="squad-list" class="d-flex flex-wrap justify-content-center gap-2">
-            {% set colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"] %}
-            {% for participant, blocks in grouped_availability.items() %}
-                {% set color = colors[loop.index0 % colors|length] %}
-                <div data-name="{{ participant.name }}" style="background: {{ color }}; color: #fff; padding: 6px 12px; border-radius: 999px; font-weight:600;">
-                    {{ participant.name }}
+                    {% endif %}
                 </div>
             {% endfor %}
         </div>
     </div>
-    
+
     <!-- SCHEDULE -->
-    <div>
+    <div class="mt-4 p-3 border rounded">
         <h4 class="mb-3">Squad Schedule</h4>
         {% if token %}
         <p class="small mb-1" style="color: #aaa;">Drag to add your availability. Click a block to remove it.</p>
@@ -138,11 +114,10 @@
         <h4 class="mb-3">Invite Links</h4>
 
         {% if is_host %}
-        <!-- Public session link for inviting others -->
         <div class="mb-3">
             <label class="form-label">Public Join Link (anyone can join)</label>
             <div class="d-flex gap-2 align-items-center">
-                <input type="text" readonly class="form-control" 
+                <input type="text" readonly class="form-control"
                     value="{{ url_for('main.view_session', session_hash=session.hash_id, _external=True) }}">
                 <button class="btn btn-outline-secondary" onclick="copyLink(this)">Copy</button>
             </div>
@@ -150,12 +125,10 @@
         </div>
         {% endif %}
 
-
-        <!-- Personal link for the current participant -->
         <div>
             <label class="form-label">Your Personal Link</label>
             <div class="d-flex gap-2 align-items-center">
-                <input type="text" readonly class="form-control" 
+                <input type="text" readonly class="form-control"
                     value="{{ url_for('main.view_session', session_hash=session.hash_id, token=participant.token, _external=True) }}">
                 <button class="btn btn-outline-secondary" onclick="copyLink(this)">Copy</button>
             </div>
@@ -168,7 +141,7 @@
     function copyLink(btn) {
         const input = btn.previousElementSibling;
         input.select();
-        input.setSelectionRange(0, 99999); // for mobile
+        input.setSelectionRange(0, 99999);
         navigator.clipboard.writeText(input.value);
         btn.textContent = "Copied!";
         setTimeout(() => btn.textContent = "Copy", 1500);
@@ -189,7 +162,7 @@
             </div>
             <div class="col-12 col-md-8 col-lg-6">
                 <h5 class="mb-2 fw-bold text-white">Manual Pick Time</h5>
-                <form action="{{ url_for('main.manual_pick', session_hash=session.hash_id, token=participant.token) }}" 
+                <form action="{{ url_for('main.manual_pick', session_hash=session.hash_id, token=participant.token) }}"
                     method="POST" class="d-flex flex-column flex-sm-row gap-2 justify-content-center">
                     <input type="datetime-local" name="manual_time" required class="form-control">
                     <button type="submit" class="btn btn-success w-100 w-sm-auto">Set Time</button>

@@ -11,10 +11,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from sqlalchemy.exc import SQLAlchemyError
 from website import create_app, db
 from website.models import Session, Participant, Availability, Confirmation, GameVote
-from website.views import _intersect_intervals, _build_game_tally, _build_grouped_json, _notify_and_flash, _ensure_game_election_schema
+from website.views import _intersect_intervals, _build_game_tally, _build_grouped_json
 
 
 @pytest.fixture
@@ -707,7 +706,7 @@ def test_intersect_intervals_merge():
 
     assert len(result) == 1
     assert result[0][0] == datetime(2025,1,1,11)
-    
+
 def test_intersect_intervals_none():
     """No overlap should return empty list."""
     a = [(datetime(2025,1,1,10), datetime(2025,1,1,11))]
@@ -716,7 +715,7 @@ def test_intersect_intervals_none():
     result = _intersect_intervals(a, b)
 
     assert result == []
-    
+
 def test_build_game_tally_empty_vote(app):
     """Empty game name should count as '(empty)'."""
     with app.app_context():
@@ -759,7 +758,7 @@ def test_grouped_json_skips_invalid(app):
         grouped, grouped_json = _build_grouped_json(s)
 
         assert grouped_json["P"] == []
-        
+    
 # def test_notify_and_flash_failures(monkeypatch, app):
 #     """Failures should trigger flash messages."""
 #     with app.app_context():
@@ -773,7 +772,7 @@ def test_grouped_json_skips_invalid(app):
 #         )
 
 #         _notify_and_flash(s)
-        
+
 # def test_ensure_schema_handles_error(monkeypatch, app):
 #     """Schema function should tolerate SQL errors."""
 #     class BrokenConn:
@@ -790,7 +789,7 @@ def test_grouped_json_skips_invalid(app):
 
 #     with app.app_context():
 #         _ensure_game_election_schema()
-        
+
 def test_add_availability_xhr(client, sample_session):
     """XHR add availability should return JSON."""
     start = datetime.now().isoformat()
@@ -808,7 +807,7 @@ def test_add_availability_xhr(client, sample_session):
 
     assert res.status_code == 200
     assert res.get_json()["ok"] is True
-    
+
 def test_remove_availability_xhr_success(client, sample_session, app):
     """XHR removal should return JSON success."""
     start = datetime.now()

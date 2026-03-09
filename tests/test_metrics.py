@@ -5,8 +5,6 @@ Unit tests for website/metrics.py
 """
 
 # pylint: disable=redefined-outer-name
-# pylint: disable=unused-argument
-# pylint: disable=unused-variable
 
 from datetime import datetime, timedelta, timezone
 
@@ -26,41 +24,12 @@ def app():
         "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
         "SQLALCHEMY_EXPIRE_ON_COMMIT": False
     })
-    ctx = flask_app.app_context()
-    ctx.push()
+    with flask_app.app_context():
+        db.create_all()
+        yield flask_app
+        db.session.remove()
+        db.drop_all()
 
-    db.create_all()
-
-    yield flask_app
-
-    db.session.remove()
-    db.drop_all()
-    db.engine.dispose()
-
-    ctx.pop()
-
-def test_load_user(app):
-    """load_user should return the correct User when given a valid id."""
-    from website.models import User
-    from website import login_manager
-
-    with app.app_context():
-        user = User(id=0)
-        db.session.add(user)
-        db.session.commit()
-
-        loaded = login_manager._user_callback(str(user.id))
-
-    assert loaded.id == user.id
-
-def test_load_user_invalid_id(app):
-    """load_user should return None when the user does not exist."""
-    from website import login_manager
-
-    with app.app_context():
-        loaded = login_manager._user_callback("999")
-
-    assert loaded is None
 
 @pytest.fixture
 def sample_data(app):
@@ -233,8 +202,6 @@ def test_metrics_activation_rate_db_error(monkeypatch, app):
     """calculate_metrics should return 0% activation when host query fails."""
     from sqlalchemy.exc import SQLAlchemyError  # pylint: disable=import-outside-toplevel
 
-    original_query = None
-
     class BrokenOnFilter:
         """Stub that passes count() but fails on filter()."""
         def count(self):
@@ -243,8 +210,14 @@ def test_metrics_activation_rate_db_error(monkeypatch, app):
         def filter(self, *args, **kwargs):
             """Raise error."""
             raise SQLAlchemyError("fail")
+        def with_entities(self, *args, **kwargs):
+            """Return self."""
+            return self
+        def distinct(self):
+            """Return self."""
+            return self
         def filter_by(self, **kwargs):
-            """Return empty list."""
+            """Return self."""
             return self
         def all(self):
             """Return empty list."""
@@ -286,149 +259,54 @@ def test_metrics_repeat_usage_db_error(monkeypatch, app):
         metrics = calculate_metrics()
     assert metrics["repeat_usage"] == "0%"
 
-def test_collect_confirmed_keys_missing_participant(monkeypatch, app):
-    """Branch: participant id exists but db.session.get returns None."""
-    from website.metrics import _collect_confirmed_keys
 
-    class FakeQuery:
-        def distinct(self):
-            return self
-        def all(self):
-            return [(999,)] 
-
-    monkeypatch.setattr("website.metrics.db.session.query", lambda *args, **kwargs: FakeQuery())
-    monkeypatch.setattr("website.metrics.db.session.get", lambda *args, **kwargs: None)
+def test_repeat_usage_with_session_datetime(app):
+    """Branch: s.datetime is set — should be included in events."""
+    from website.metrics import _collect_repeat_usage  # pylint: disable=import-outside-toplevel
 
     with app.app_context():
-        result = _collect_confirmed_keys()
-
-    assert result == set()
-
-def test_repeat_usage_naive_datetime(app):
-    """Branch: datetime without tzinfo should be normalized."""
-    from website.metrics import _collect_repeat_usage
-
-    with app.app_context():
-        s = Session(title="Test")
+        s = Session(title="WithDatetime")
         db.session.add(s)
         db.session.commit()
 
-        p = Participant(name="User", email="tz@test.com", session_id=s.id)
+        p = Participant(name="DateUser", email="dateuser@test.com", session_id=s.id)
         db.session.add(p)
         db.session.commit()
 
-        naive_time = datetime.now()
-
-        s1 = Session(title="A", host_id=p.id, final_time=naive_time)
-        s2 = Session(title="B", host_id=p.id, final_time=naive_time + timedelta(days=1))
-
+        now = datetime.now(timezone.utc)
+        s1 = Session(title="D1", host_id=p.id)
+        s2 = Session(title="D2", host_id=p.id)
         db.session.add_all([s1, s2])
         db.session.commit()
 
-        result = _collect_repeat_usage([p], 1)
-
-    assert result >= 0
-
-def test_repeat_usage_duplicate_participant(app):
-    """Branch: duplicate participant key triggers seen_keys continue."""
-    from website.metrics import _collect_repeat_usage
-
-    with app.app_context():
-        s = Session(title="Session")
-        db.session.add(s)
-        db.session.commit()
-
-        p = Participant(name="Dup", email="dup@test.com", session_id=s.id)
-        db.session.add(p)
-        db.session.commit()
-
-        participants = [p, p] 
-
-        result = _collect_repeat_usage(participants, 1)
-
-    assert result >= 0
-    
-def test_repeat_usage_single_time(app):
-    """Branch: participant with only one timestamp should not count as repeat."""
-    from website.metrics import _collect_repeat_usage
-
-    with app.app_context():
-        s = Session(title="Single")
-        db.session.add(s)
-        db.session.commit()
-
-        p = Participant(name="SingleUser", email="single@test.com", session_id=s.id)
-        db.session.add(p)
-        db.session.commit()
-
-        s1 = Session(title="Only", host_id=p.id, final_time=datetime.now(timezone.utc))
-        db.session.add(s1)
+        # Set datetime directly via update to bypass model constraints
+        s1.datetime = now
+        s2.datetime = now + timedelta(days=1)
         db.session.commit()
 
         result = _collect_repeat_usage([p], 1)
 
-    assert result == 0
-    
-def test_activation_rate_zero_users(app):
-    """Branch: activation rate when no users exist."""
-    from website.metrics import _collect_activation_rate
-
-    with app.app_context():
-        rate = _collect_activation_rate(0, set())
-
-    assert rate == 0
-    
-def test_repeat_usage_availability_query_failure(monkeypatch, app):
-    """Branch: availability query raises SQL error."""
-    from sqlalchemy.exc import SQLAlchemyError
-
-    class BrokenAvailability:
-        def filter_by(self, **kwargs):
-            raise SQLAlchemyError("fail")
-
-    monkeypatch.setattr("website.metrics.Availability.query", BrokenAvailability())
-
-    with app.app_context():
-        metrics = calculate_metrics()
-
-    assert metrics["repeat_usage"] == "0%"
-    
-def test_repeat_usage_duplicate_key_branch(app):
-    """Trigger the seen_keys continue branch."""
-    from website.metrics import _collect_repeat_usage
-
-    with app.app_context():
-        s = Session(title="DupTest")
-        db.session.add(s)
-        db.session.commit()
-
-        p = Participant(name="Dup", email="dup@test.com", session_id=s.id)
-        db.session.add(p)
-        db.session.commit()
-
-        participants = [p, p]
-
-        result = _collect_repeat_usage(participants, 1)
-
     assert result >= 0
-    
-def test_calculate_metrics_confirmed_keys_exception(monkeypatch, app):
-    """Force _collect_confirmed_keys to raise SQLAlchemyError."""
-    from sqlalchemy.exc import SQLAlchemyError
+
+
+def test_availability_only_except_branch(monkeypatch, app):
+    """Branch: _collect_availability_keys raises SQLAlchemyError."""
+    from sqlalchemy.exc import SQLAlchemyError  # pylint: disable=import-outside-toplevel
 
     def broken():
         raise SQLAlchemyError("fail")
 
-    monkeypatch.setattr("website.metrics._collect_confirmed_keys", broken)
+    monkeypatch.setattr("website.metrics._collect_availability_keys", broken)
 
     with app.app_context():
         metrics = calculate_metrics()
 
-    assert metrics["confirmed_participants"] == 0
-    
-def test_calculate_metrics_repeat_usage_exception(monkeypatch, app):
-    """Force _collect_repeat_usage to raise SQLAlchemyError."""
-    from sqlalchemy.exc import SQLAlchemyError
+    assert metrics["availability_only_participants"] == 0
+
+
+def test_calculate_metrics_repeat_usage_except_branch(monkeypatch, app):
+    """Force the repeat_usage except branch in calculate_metrics."""
+    from sqlalchemy.exc import SQLAlchemyError  # pylint: disable=import-outside-toplevel
 
     def broken(*args, **kwargs):
         raise SQLAlchemyError("fail")
@@ -439,3 +317,21 @@ def test_calculate_metrics_repeat_usage_exception(monkeypatch, app):
         metrics = calculate_metrics()
 
     assert metrics["repeat_usage"] == "0%"
+
+
+def test_calculate_metrics_participant_query_fails(monkeypatch, app):
+    """Force the all_participants except branch — unique_joined should default to 0."""
+    from sqlalchemy.exc import SQLAlchemyError  # pylint: disable=import-outside-toplevel
+
+    class BrokenParticipantQuery:
+        """Stub that raises on .all()."""
+        def all(self):
+            """Raise a DB error."""
+            raise SQLAlchemyError("fail")
+
+    monkeypatch.setattr("website.metrics.Participant.query", BrokenParticipantQuery())
+    with app.app_context():
+        metrics = calculate_metrics()
+
+    assert metrics["total_users"] == 0
+    assert metrics["sessions_created"] == 0

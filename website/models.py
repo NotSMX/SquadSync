@@ -38,9 +38,14 @@ class Session(db.Model):
         default=lambda: datetime.now(timezone.utc)
     )
     host_id = db.Column(db.Integer, db.ForeignKey('participant.id'))
-    host = db.relationship('Participant', foreign_keys=[host_id])
+    host = db.relationship(
+        'Participant',
+        foreign_keys=[host_id],
+        post_update=True
+    )
     participants = db.relationship(
         'Participant', backref='session',
+        cascade="all, delete-orphan",
         foreign_keys='Participant.session_id'
     )
     final_time = db.Column(db.DateTime, nullable=True)
@@ -58,7 +63,7 @@ class Participant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), nullable=False)
     session_id = db.Column(
-        db.Integer, db.ForeignKey('session.id'), nullable=False
+        db.Integer, db.ForeignKey('session.id', ondelete="CASCADE"), nullable=False
     )
     email = db.Column(db.String(120))
     availabilities = db.relationship(

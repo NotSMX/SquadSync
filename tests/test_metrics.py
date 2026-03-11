@@ -210,13 +210,13 @@ def test_metrics_activation_rate_db_error(monkeypatch, app):
         def filter(self, *args, **kwargs):
             """Raise error."""
             raise SQLAlchemyError("fail")
-        def with_entities(self, *args, **kwargs):
+        def with_entities(self, *args, **kwargs): # pylint: disable=unused-argument
             """Return self."""
             return self
         def distinct(self):
             """Return self."""
             return self
-        def filter_by(self, **kwargs):
+        def filter_by(self, **kwargs): # pylint: disable=unused-argument
             """Return self."""
             return self
         def all(self):
@@ -238,10 +238,10 @@ def test_metrics_repeat_usage_db_error(monkeypatch, app):
         def count(self):
             """Return 0."""
             return 0
-        def filter(self, *args, **kwargs):
+        def filter(self, *args, **kwargs): # pylint: disable=unused-argument
             """Return self."""
             return self
-        def with_entities(self, *args, **kwargs):
+        def with_entities(self, *args, **kwargs): # pylint: disable=unused-argument
             """Return self."""
             return self
         def distinct(self):
@@ -323,7 +323,7 @@ def test_calculate_metrics_participant_query_fails(monkeypatch, app):
     """Force the all_participants except branch — unique_joined should default to 0."""
     from sqlalchemy.exc import SQLAlchemyError  # pylint: disable=import-outside-toplevel
 
-    class BrokenParticipantQuery:
+    class BrokenParticipantQuery: # pylint: disable=too-few-public-methods
         """Stub that raises on .all()."""
         def all(self):
             """Raise a DB error."""

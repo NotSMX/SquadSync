@@ -27,6 +27,13 @@ def create_app():
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["RAWG_API_KEY"] = os.environ.get("RAWG_API_KEY", "")
 
+    # SSE: disable connection pooling timeout issues under high thread counts.
+    # pool_size=0 → NullPool when using SQLite; for Postgres keep default but
+    # bump pool_size to match your --threads count.
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,
+    }
+
     email_user = os.environ.get("EMAIL_USER")
     app.config.update(
         MAIL_SERVER="smtp.gmail.com",

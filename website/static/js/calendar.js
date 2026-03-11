@@ -43,7 +43,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     editable: name === myName,
                     interactive: name === myName,
                     classNames: name === myName ? ['fc-event-mine'] : [],
-                    backgroundColor: (name === myName ? color + "99" : color + "20"), borderColor: "transparent"
+                    backgroundColor: (name === myName ? color + "99" : color + "20"),
+                    borderColor: "transparent"
                 });
             }
         });
@@ -95,7 +96,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     var newStart = info.start.getTime();
                     var newEnd = info.end.getTime();
 
-                    // Remove my events fully contained within the new block
                     calendar.getEvents()
                         .filter(function(e) {
                             return e.title === myName
@@ -139,39 +139,57 @@ document.addEventListener('DOMContentLoaded', function() {
 
     calendar.render();
 
-    if (sessionHash) {
-        setInterval(function() {
-            fetch('/session/' + sessionHash + '/availability_data', {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            })
-            .then(r => r.json())
-            .then(function(fresh) {
-                calendar.getEvents()
-                    .filter(function(e) { return e.title !== myName; })
-                    .forEach(function(e) { e.remove(); });
+    // ── SSE-driven live updates (replaces setInterval polling) ───────────────
+    //
+    // session_sse.js calls window.rebuildCalendar(availability) when the
+    // server pushes a state change. We also listen for the custom event
+    // as a fallback in case script load order varies.
 
-                var squadList = document.getElementById('squad-list');
-                Object.keys(fresh).forEach(function(name) {
-                    var color = getColor(name);
-                    if (squadList && !squadList.querySelector('[data-name="' + name + '"]')) {
-                        var pill = document.createElement('div');
-                        pill.setAttribute('data-name', name);
-                        pill.style.cssText = 'background:' + color + ';color:#fff;padding:6px 12px;border-radius:999px;font-weight:600;';
-                        pill.textContent = name;
-                        squadList.appendChild(pill);
-                    }
-                    if (name === myName) return;
-                    (fresh[name] || []).forEach(function(block) {
-                        if (block.start && block.end)
-                            calendar.addEvent({
-                                title: name, start: block.start, end: block.end,
-                                display: 'auto', editable: false, interactive: false,
-                                backgroundColor: color + "20",
-                                borderColor: "transparent"
-                            });
+    function rebuildCalendar(fresh) {
+        if (!fresh) return;
+
+        // Remove all other-people's events and re-add from fresh data
+        calendar.getEvents()
+            .filter(function(e) { return e.title !== myName; })
+            .forEach(function(e) { e.remove(); });
+
+        // Add new participants to the squad list if they've just joined
+        var squadList = document.getElementById('squad-list');
+        Object.keys(fresh).forEach(function(name) {
+            var color = getColor(name);
+
+            if (squadList && !squadList.querySelector('[data-name="' + CSS.escape(name) + '"]')) {
+                var card = document.createElement('div');
+                card.className = 'squad-card';
+                card.setAttribute('data-name', name);
+                var pill = document.createElement('div');
+                pill.className = 'squad-pill';
+                pill.style.background = color;
+                pill.textContent = name;
+                card.appendChild(pill);
+                squadList.appendChild(card);
+            }
+
+            if (name === myName) return;
+
+            (fresh[name] || []).forEach(function(block) {
+                if (block.start && block.end) {
+                    calendar.addEvent({
+                        title: name, start: block.start, end: block.end,
+                        display: 'auto', editable: false, interactive: false,
+                        backgroundColor: color + "20",
+                        borderColor: "transparent"
                     });
-                });
+                }
             });
-        }, 5000);
+        });
     }
+
+    // Expose for session_sse.js
+    window.rebuildCalendar = rebuildCalendar;
+
+    // Also handle the custom-event fallback
+    document.addEventListener('synq:availability', function(e) {
+        rebuildCalendar(e.detail);
+    });
 });

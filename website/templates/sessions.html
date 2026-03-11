@@ -6,12 +6,26 @@
 
 <h2 class="mb-4">Public Gaming Sessions</h2>
 
-<input
-    type="text"
-    id="sessionSearch"
-    class="form-control session-search mb-4"
-    placeholder="Search sessions by title..."
->
+<div class="d-flex gap-2 mb-4">
+    <input
+        type="text"
+        id="searchTitle"
+        class="form-control"
+        placeholder="Search by title..."
+    >
+    <input
+        type="text"
+        id="searchGame"
+        class="form-control"
+        placeholder="Search by game..."
+    >
+    <input
+        type="text"
+        id="searchTime"
+        class="form-control"
+        placeholder="Search by date e.g. 2025-06..."
+    >
+</div>
 
 {% if sessions %}
 <table class="table sessions-table" id="sessionsTable">
@@ -31,7 +45,7 @@
 {% for data in sessions %}
 <tr>
 
-<td>
+<td class="session-title">
 {{ data.session.title }}
 </td>
 
@@ -43,7 +57,7 @@
 {% endif %}
 </td>
 
-<td>
+<td class="session-game">
 {% if data.session.chosen_game %}
 {{ data.session.chosen_game }}
 {% else %}
@@ -51,7 +65,7 @@ Not selected
 {% endif %}
 </td>
 
-<td>
+<td class="session-time">
 {% if data.session.final_time %}
 {{ data.session.final_time.strftime("%Y-%m-%d %H:%M") }}
 {% else %}
@@ -65,8 +79,7 @@ TBD
 
 <td>
 
-<a
-href="{{ url_for('main.view_session', session_hash=data.session.hash_id) }}"
+<a href="{{ url_for('main.view_session', session_hash=data.session.hash_id) }}"
 class="btn btn-primary btn-sm me-2">
 View
 </a>
@@ -74,8 +87,6 @@ View
 <form method="POST"
 action="{{ url_for('main.join_session', session_id=data.session.id) }}"
 style="display:inline;">
-
-
 </form>
 
 </td>
@@ -93,27 +104,32 @@ style="display:inline;">
 
 <script>
 
-const searchInput = document.getElementById("sessionSearch");
+const searchTitle = document.getElementById("searchTitle");
+const searchGame = document.getElementById("searchGame");
+const searchTime = document.getElementById("searchTime");
 
-searchInput.addEventListener("keyup", function() {
+function filterRows() {
+    const titleFilter = searchTitle.value.toLowerCase();
+    const gameFilter = searchGame.value.toLowerCase();
+    const timeFilter = searchTime.value.toLowerCase();
 
-let filter = searchInput.value.toLowerCase();
+    document.querySelectorAll("#sessionsTable tbody tr").forEach(function(row) {
+        const title = row.querySelector(".session-title").textContent.toLowerCase();
+        const game = row.querySelector(".session-game").textContent.toLowerCase();
+        const time = row.querySelector(".session-time").textContent.toLowerCase();
 
-let rows = document.querySelectorAll("#sessionsTable tbody tr");
+        const matches =
+            title.includes(titleFilter) &&
+            game.includes(gameFilter) &&
+            time.includes(timeFilter);
 
-rows.forEach(function(row){
-
-let title = row.querySelector(".session-title").textContent.toLowerCase();
-
-if(title.includes(filter)){
-row.style.display = "";
-}else{
-row.style.display = "none";
+        row.style.display = matches ? "" : "none";
+    });
 }
 
-});
-
-});
+searchTitle.addEventListener("input", filterRows);
+searchGame.addEventListener("input", filterRows);
+searchTime.addEventListener("input", filterRows);
 
 </script>
 

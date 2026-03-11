@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from sqlalchemy.exc import IntegrityError
-from website import create_app, db
+from website import db
 from website.models import User, Session, Participant, Availability, Confirmation, GameVote
 
 def test_user_repr(app):

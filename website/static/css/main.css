@@ -315,7 +315,6 @@ hr {
 }
 
 .session-title {
-    font-size: clamp(2rem, 6vw, 3.5rem);
     font-weight: 700;
     letter-spacing: 0.05em;
     margin: 0;
@@ -466,4 +465,68 @@ hr {
     color: #7b2ff7;
     font-weight: 700;
     letter-spacing: 0.05em;
+}
+
+.disclaimer {
+    display: flex;
+    position: relative;
+    flex-direction: column; 
+    justify-content: flex-end; 
+    align-items: center;
+    height: 100%; 
+    width: 100%;
+    top: 20px;
+}
+
+/* Footer */
+.disclaimer p {
+    text-align: center;
+    color: #7b2ff7;
+    margin-bottom: 20px;
+}
+
+.privacy-notice {
+    display: flex;
+    flex-direction: column; 
+    position: relative;
+    justify-content: flex-end; 
+    align-items: center;
+    height: 100%; 
+    width: 100%;
+    top: 20px;
+}
+
+.privacy-notice p {
+    text-align: center;
+    color: #7b2ff7;
+    margin-bottom: 20px;
+}
+
+.footer {
+    font-size: 0.9rem;
+    color: #777;
+} 
+
+#policyModal .modal-content {
+    background: #0f172a;
+    color: #e2e8f0;
+}
+
+
+#policyModal .modal-header {
+    background-color: #1e1e2f;
+    border-bottom: 1px solid #333;
+}
+
+#policyModal .modal-title {
+    color: #7b2ff7;       
+    font-weight: 600;
+}
+
+#policyModal .btn-close {
+    filter: invert(1);
+}
+
+.btn-link{
+    color: #7b2ff7;
 }

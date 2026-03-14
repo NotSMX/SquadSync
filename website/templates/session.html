@@ -10,7 +10,53 @@
         <h1 class="session-title">{{ session.title }}</h1>
     </div>
 
-    <!-- GAME ELECTION (choose which game to play - not time) -->
+    {% if session.final_time %}
+        <div class="final-time-banner">
+            <p class="final-time-label">📅 Session Locked</p>
+            <p class="final-time-value">{{ session.final_time.strftime("%A, %B %d, %Y at %I:%M %p") }}</p>
+        </div>
+    {% endif %}
+
+    <!-- SQUAD + CONFIRMATION -->
+    <div class="mb-4 text-center">
+        <h4 class="mb-3">Squad</h4>
+        <div class="squad-grid" id="squad-list">
+            {% set colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"] %}
+            {% for p, blocks in grouped_availability.items() %}
+                {% set color = colors[loop.index0 % colors|length] %}
+                {% set status = confirmations[p.id] %}
+                <div class="squad-card" data-name="{{ p.name }}">
+                    <div class="squad-pill" style="background: {{ color }};">{{ p.name }}</div>
+                    {% if session.final_time %}
+                        {% if p.token == participant.token %}
+                            <form action="{{ url_for('main.confirm', session_id=session.id, token=p.token) }}" method="POST" class="confirm-btns">
+                                <button class="btn-yes"   name="status" value="Yes">Yes</button>
+                                <button class="btn-maybe" name="status" value="Maybe">?</button>
+                                <button class="btn-no"    name="status" value="No">No</button>
+                            </form>
+                        {% endif %}
+                        <span class="status-pill {% if status == 'Yes' %}s-yes{% elif status == 'Maybe' %}s-maybe{% elif status == 'No' %}s-no{% else %}s-none{% endif %}">
+                            {{ status if status else 'No Response' }}
+                        </span>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- SCHEDULE (first) -->
+    <div class="mt-4 p-3 border rounded">
+        <h4 class="mb-3 text-center">Squad Schedule</h4>
+        {% if token %}
+        <p class="small mb-1 text-center" style="color: #aaa;">Drag to add your availability. Click a block to remove it.</p>
+        <div class="text-center mb-2">
+            <button id="clear-availability" class="btn btn-outline-danger btn-sm">✕ Clear my availability</button>
+        </div>
+        {% endif %}
+        <div id="group-calendar" style="min-height: 450px; width: 100%;"></div>
+    </div>
+
+    <!-- WHAT TO PLAY (second) -->
     <div class="mb-4 mt-2 mx-auto" style="max-width: 600px;">
     <div class="p-3 border rounded" style="background-color: #454545; border-color: #555;">
         <h4 class="mb-1 fw-bold" style="color: #eee;">What to play?</h4>
@@ -64,52 +110,6 @@
             {% endif %}
         {% endif %}
     </div>
-    </div>
-
-    {% if session.final_time %}
-        <div class="final-time-banner">
-            <p class="final-time-label">📅 Session Locked</p>
-            <p class="final-time-value">{{ session.final_time.strftime("%A, %B %d, %Y at %I:%M %p") }}</p>
-        </div>
-    {% endif %}
-
-    <!-- SQUAD + CONFIRMATION -->
-    <div class="mb-4 text-center">
-        <h4 class="mb-3">Squad</h4>
-        <div class="squad-grid" id="squad-list">
-            {% set colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"] %}
-            {% for p, blocks in grouped_availability.items() %}
-                {% set color = colors[loop.index0 % colors|length] %}
-                {% set status = confirmations[p.id] %}
-                <div class="squad-card" data-name="{{ p.name }}">
-                    <div class="squad-pill" style="background: {{ color }};">{{ p.name }}</div>
-                    {% if session.final_time %}
-                        {% if p.token == participant.token %}
-                            <form action="{{ url_for('main.confirm', session_id=session.id, token=p.token) }}" method="POST" class="confirm-btns">
-                                <button class="btn-yes"   name="status" value="Yes">Yes</button>
-                                <button class="btn-maybe" name="status" value="Maybe">?</button>
-                                <button class="btn-no"    name="status" value="No">No</button>
-                            </form>
-                        {% endif %}
-                        <span class="status-pill {% if status == 'Yes' %}s-yes{% elif status == 'Maybe' %}s-maybe{% elif status == 'No' %}s-no{% else %}s-none{% endif %}">
-                            {{ status if status else 'No Response' }}
-                        </span>
-                    {% endif %}
-                </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- SCHEDULE -->
-    <div class="mt-4 p-3 border rounded">
-        <h4 class="mb-3 text-center">Squad Schedule</h4>
-        {% if token %}
-        <p class="small mb-1 text-center" style="color: #aaa;">Drag to add your availability. Click a block to remove it.</p>
-        <div class="text-center mb-2">
-            <button id="clear-availability" class="btn btn-outline-danger btn-sm">✕ Clear my availability</button>
-        </div>
-        {% endif %}
-        <div id="group-calendar" style="min-height: 450px; width: 100%;"></div>
     </div>
 
     <!-- INVITE LINKS -->

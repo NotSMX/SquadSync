@@ -19,7 +19,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from website import db
 from website.models import Confirmation, Participant, Session, Availability, GameVote
-from website.utils import notify_final_time
+from website.utils import notify_final_time, notify_personal_link
 
 main = Blueprint("main", __name__)
 
@@ -129,6 +129,7 @@ def create_session():
         )
         db.session.add(host_participant)
         db.session.commit()
+        notify_personal_link(host_participant, new_session)
 
         new_session.host_id = host_participant.id
         db.session.commit()
@@ -156,6 +157,8 @@ def join_session(session_id):
     if not game_session.host_id:
         game_session.host_id = participant.id
         db.session.commit()
+
+    notify_personal_link(participant, game_session)
 
     return redirect(url_for(
         "main.view_session",
@@ -858,3 +861,83 @@ def stream_session(session_hash):
             "Connection": "keep-alive",
         },
     )
+
+@main.route("/seed-test-data", methods=["POST"])
+def seed_test_data():
+    """Seed fake participants and sessions for metrics testing."""
+    from datetime import datetime, timezone, timedelta
+    from website.models import Participant, Session, Confirmation, Availability
+
+    now = datetime.now(timezone.utc)
+
+    # ── User A: repeat user (2 sessions, 3 days apart) ──────────────────
+    s1 = Session(title="User A Session 1", is_public=True, datetime=now - timedelta(days=6))
+    s2 = Session(title="User A Session 2", is_public=True, datetime=now - timedelta(days=3))
+    db.session.add_all([s1, s2])
+    db.session.commit()
+
+    a1 = Participant(name="Alice", email="alice@test.com", session_id=s1.id)
+    db.session.add(a1)
+    db.session.commit()
+    s1.host_id = a1.id
+
+    a2 = Participant(name="Alice", email="alice@test.com", session_id=s2.id)
+    db.session.add(a2)
+    db.session.commit()
+    s2.host_id = a2.id
+
+    # ── User B: same-day activity only (should NOT count as repeat) ──────
+    s3 = Session(title="User B Session", is_public=True, datetime=now - timedelta(hours=2))
+    db.session.add(s3)
+    db.session.commit()
+
+    b1 = Participant(name="Bob", email="bob@test.com", session_id=s3.id)
+    db.session.add(b1)
+    db.session.commit()
+    s3.host_id = b1.id
+
+    c1 = Confirmation(participant_id=b1.id, session_id=s3.id, status="yes",
+                      created_at=now - timedelta(hours=1))
+    db.session.add(c1)
+
+    # ── User C: activity 10 days apart (outside 7-day window, NOT repeat) 
+    s4 = Session(title="User C Session 1", is_public=True, datetime=now - timedelta(days=12))
+    s5 = Session(title="User C Session 2", is_public=True, datetime=now - timedelta(days=2))
+    db.session.add_all([s4, s5])
+    db.session.commit()
+
+    c_p1 = Participant(name="Carol", email="carol@test.com", session_id=s4.id)
+    db.session.add(c_p1)
+    db.session.commit()
+    s4.host_id = c_p1.id
+
+    c_p2 = Participant(name="Carol", email="carol@test.com", session_id=s5.id)
+    db.session.add(c_p2)
+    db.session.commit()
+    s5.host_id = c_p2.id
+
+    # ── User D: joined but no activity (not activated) ───────────────────
+    s6 = Session(title="Host Session", is_public=True, datetime=now)
+    db.session.add(s6)
+    db.session.commit()
+
+    host = Participant(name="Host", email="host@test.com", session_id=s6.id)
+    db.session.add(host)
+    db.session.commit()
+    s6.host_id = host.id
+
+    d1 = Participant(name="Dave", email="dave@test.com", session_id=s6.id)
+    db.session.add(d1)
+
+    # ── User E: confirmed (activated, not repeat) ─────────────────────────
+    e1 = Participant(name="Eve", email="eve@test.com", session_id=s6.id)
+    db.session.add(e1)
+    db.session.commit()
+
+    conf_e = Confirmation(participant_id=e1.id, session_id=s6.id, status="yes",
+                          created_at=now - timedelta(days=1))
+    db.session.add(conf_e)
+
+    db.session.commit()
+    flash("Test data seeded.", "success")
+    return redirect(url_for("main.dashboard"))

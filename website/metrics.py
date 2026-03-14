@@ -84,46 +84,43 @@ def _collect_activation_rate(unique_joined):
 def _collect_repeat_usage(all_participants, unique_joined):
     """Return repeat usage rate as a rounded float."""
     repeat_count = 0
-    seen_keys = set()
 
+    # Group all participant IDs by email (one user = one email)
+    email_to_ids = {}
     for p in all_participants:
-        key = (p.email or "").strip().lower()
-        if not key or key in seen_keys:
-            continue
-        seen_keys.add(key)
+        key = (p.email or "").strip().lower() or f"id:{p.id}"
+        email_to_ids.setdefault(key, []).append(p.id)
 
+    for key, pids in email_to_ids.items():
         events = []
 
-        # Hosting sessions
-        for s in Session.query.filter_by(host_id=p.id).all():
-            if s.datetime:
-                t = s.datetime.replace(tzinfo=timezone.utc) if s.datetime.tzinfo is None else s.datetime
-                events.append((t, s.id, 'host'))
+        for pid in pids:
+            # Hosting sessions — check all participant IDs for this email
+            for s in Session.query.filter_by(host_id=pid).all():
+                if s.datetime:
+                    t = s.datetime.replace(tzinfo=timezone.utc) if s.datetime.tzinfo is None else s.datetime
+                    events.append((t, s.id, 'host'))
 
-        # Confirmations (created or updated)
-        for c in Confirmation.query.filter_by(participant_id=p.id).all():
-            for t_attr in ['created_at', 'updated_at']:
-                t = getattr(c, t_attr, None)
-                if t:
-                    t = t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t
-                    events.append((t, c.session_id, t_attr))
+            # Confirmations
+            for c in Confirmation.query.filter_by(participant_id=pid).all():
+                for t_attr in ['created_at', 'updated_at']:
+                    t = getattr(c, t_attr, None)
+                    if t:
+                        t = t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t
+                        events.append((t, c.session_id, t_attr))
 
-        # Sort by timestamp
         events.sort(key=lambda x: x[0])
 
-        # Track if any repeat activity exists
         for i in range(1, len(events)):
             prev = events[i - 1]
             curr = events[i]
 
-            # Ignore if both activities are for same session and same timestamp
             if prev[1] == curr[1] and prev[0] == curr[0]:
                 continue
 
-            # Count as repeat if within window
-            if (curr[0] - prev[0]) <= timedelta(days=7):
+            if timedelta(days=1) <= (curr[0] - prev[0]) <= timedelta(days=7):
                 repeat_count += 1
-                break  # Count each participant only once
+                break
 
     return round(repeat_count / unique_joined * 100, 1) if unique_joined else 0
 

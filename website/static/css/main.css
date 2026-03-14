@@ -178,17 +178,17 @@ hr {
     filter: brightness(0.6);
 }
 
-/* Multiplayer Game Backgrounds */
+/* Multiplayer Game Backgrounds (optimized size for faster LCP) */
 .bg-slide:nth-child(1) {
-    background-image: url("https://images.unsplash.com/photo-1606813907291-d86efa9b94db");
+    background-image: url("https://images.unsplash.com/photo-1606813907291-d86efa9b94db?auto=format&fit=crop&w=1200");
 }
 
 .bg-slide:nth-child(2) {
-    background-image: url("https://images.unsplash.com/photo-1542751371-adc38448a05e");
+    background-image: url("https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200");
 }
 
 .bg-slide:nth-child(3) {
-    background-image: url("https://images.unsplash.com/photo-1493711662062-fa541adb3fc8");
+    background-image: url("https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?auto=format&fit=crop&w=1200");
 }
 
 .bg-slide.active {

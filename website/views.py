@@ -115,9 +115,9 @@ def create_session():
     """Create a new session and redirect the host to it."""
     if request.method == "POST":
         _ensure_game_election_schema()
-        title = request.form["title"]
-        host_name = request.form["name"]
-        email = request.form["email"]
+        host_name = (request.form.get("name") or "").strip() or "Host"
+        title = (request.form.get("title") or "").strip() or f"{host_name}'s session"
+        email = request.form.get("email", "").strip()
         is_public = "is_public" in request.form
 
         new_session = Session(title=title, is_public=is_public)

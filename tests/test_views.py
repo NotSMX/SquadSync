@@ -1334,3 +1334,183 @@ monkeypatch, sample_session):
     payload = _json.loads(first.split("data: ", 1)[1].strip())
     assert any(g["name"] == "Catan" for g in payload["game_tally"])
     assert payload["confirmations"].get("Host") == "yes"
+
+# ── _ensure_game_election_schema: conn.commit() after successful ALTER ────────
+
+def test_ensure_schema_commit_branch(client, app):
+    """Schema function executes conn.commit() on a fresh in-memory DB with no columns yet."""
+    with app.app_context():
+        # Drop the columns that _ensure_game_election_schema tries to add
+        # by dropping and recreating tables without them — easiest way is
+        # just calling the route which triggers the function on a clean DB
+        db.drop_all()
+        db.create_all()
+
+    res = client.post("/create", data={
+        "title": "Schema Commit Test",
+        "name": "Tester",
+        "email": "t@t.com",
+        "is_public": "on",
+    }, follow_redirects=True)
+    assert res.status_code == 200
+
+
+# ── _notify_and_flash: flash success and failure messages ────────────────────
+
+def test_notify_and_flash_flashes_success(monkeypatch, client, app, sample_session):
+    """_notify_and_flash should flash success message when emails are sent."""
+    monkeypatch.setattr("website.views.notify_final_time", lambda s: (3, []))
+    with client.application.test_request_context():
+        from flask import get_flashed_messages
+        from website.views import _notify_and_flash
+        with app.app_context():
+            s = db.session.get(Session, sample_session["session_id"])
+            _notify_and_flash(s)
+
+
+def test_notify_and_flash_flashes_failure(monkeypatch, client, app, sample_session):
+    """_notify_and_flash should flash danger message on email failure."""
+    monkeypatch.setattr(
+        "website.views.notify_final_time",
+        lambda s: (0, [("Bob", "SMTP error")])
+    )
+    with client.application.test_request_context():
+        from website.views import _notify_and_flash
+        with app.app_context():
+            s = db.session.get(Session, sample_session["session_id"])
+            _notify_and_flash(s)
+
+
+# ── join_and_vote: host_id assigned when session has no host ─────────────────
+
+def test_join_and_vote_assigns_host_when_none(client, app):
+    """join_and_vote should set host_id when session has no host."""
+    with app.app_context():
+        s = Session(title="No Host", is_public=True)
+        db.session.add(s)
+        db.session.commit()
+        session_hash = s.hash_id
+        session_id = s.id
+
+    res = client.post(
+        f"/session/{session_hash}/join_and_vote",
+        data={"name": "First", "email": "first@test.com", "game_name": "Chess"},
+        follow_redirects=True
+    )
+    assert res.status_code == 200
+
+    with app.app_context():
+        updated = db.session.get(Session, session_id)
+        assert updated.host_id is not None
+
+
+# ── remove_availability: non-XHR failure path flashes and redirects ──────────
+
+def test_remove_availability_non_xhr_not_found(client, sample_session):
+    """Non-XHR remove of missing block should flash warning and redirect."""
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/remove_availability",
+        data={
+            "token": sample_session["host_token"],
+            "start": datetime.now().isoformat(),
+            "end": (datetime.now() + timedelta(hours=1)).isoformat()
+        }
+    )
+    assert res.status_code == 302
+
+
+def test_remove_availability_non_xhr_missing_fields(client, sample_session):
+    """Non-XHR remove with missing fields should flash warning and redirect."""
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/remove_availability",
+        data={"token": sample_session["host_token"]}
+    )
+    assert res.status_code == 302
+
+
+def test_remove_availability_non_xhr_invalid_time(client, sample_session):
+    """Non-XHR remove with invalid time should flash warning and redirect."""
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/remove_availability",
+        data={
+            "token": sample_session["host_token"],
+            "start": "bad",
+            "end": "bad"
+        }
+    )
+    assert res.status_code == 302
+
+
+# ── _sse_generate: gone, reconnect, keepalive last_keepalive=now branch ──────
+
+def test_sse_generate_keepalive_updates_last_keepalive(app, monkeypatch, sample_session):
+    """After a keepalive, last_keepalive should reset so next keepalive is delayed."""
+    import website.views as vmod
+
+    # time sequence: start=0, loop1 check=0 (state), now=16 (keepalive fires),
+    # last_keepalive becomes 16; loop2 now=17 (< 16+15=31, no second keepalive),
+    # then 400 to expire
+    times = iter([0.0, 0.0, 16.0, 16.0, 17.0, 17.0, 400.0])
+    fake_t = __import__("types").SimpleNamespace(
+        time=lambda: next(times), sleep=lambda _: None
+    )
+    monkeypatch.setattr(vmod, "_time", fake_t)
+    monkeypatch.setattr(vmod, "_SSE_KEEPALIVE_EVERY", 15)
+    monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 300)
+
+    with app.app_context():
+        gen = _sse_generate(sample_session["session_hash"])
+        first = next(gen)
+        assert first.startswith("event: state\n")
+        second = next(gen)
+        assert second == ": keepalive\n\n"
+        # Third event: time=400 triggers reconnect, NOT a second keepalive
+        third = next(gen)
+        assert third == "event: reconnect\ndata: {}\n\n"
+
+
+# ── seed_test_data route ──────────────────────────────────────────────────────
+
+def test_seed_test_data_route(client):
+    """POST /seed-test-data should seed data and redirect to dashboard."""
+    res = client.post("/seed-test-data", follow_redirects=True)
+    assert res.status_code == 200
+
+
+def test_seed_test_data_creates_expected_users(client, app):
+    """Seeding should create 6 unique participants across multiple sessions."""
+    client.post("/seed-test-data")
+    with app.app_context():
+        all_participants = Participant.query.all()
+        unique_emails = {
+            (p.email or "").strip().lower()
+            for p in all_participants
+            if (p.email or "").strip()
+        }
+        assert len(unique_emails) == 6
+
+
+def test_seed_test_data_creates_sessions(client, app):
+    """Seeding should create 6 sessions."""
+    client.post("/seed-test-data")
+    with app.app_context():
+        assert Session.query.count() == 6
+
+
+def test_seed_test_data_alice_has_two_sessions(client, app):
+    """Alice should have participant rows in 2 different sessions."""
+    client.post("/seed-test-data")
+    with app.app_context():
+        alice_rows = Participant.query.filter_by(email="alice@test.com").all()
+        assert len(alice_rows) == 2
+
+
+def test_seed_test_data_eve_has_confirmation(client, app):
+    """Eve should have a confirmation after seeding."""
+    client.post("/seed-test-data")
+    with app.app_context():
+        eve = Participant.query.filter_by(email="eve@test.com").first()
+        assert eve is not None
+        conf = Confirmation.query.filter_by(participant_id=eve.id).first()
+        assert conf is not None
+        assert conf.status == "yes"

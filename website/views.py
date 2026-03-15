@@ -1001,6 +1001,7 @@ def _sse_generate(session_hash):
             # Wait for notify or timeout — releases thread/greenlet
             event.wait(timeout=2.0)
             event.clear()
+            gevent_sleep(0)
 
     finally:
         with _session_waiters_lock:

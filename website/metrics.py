@@ -162,6 +162,15 @@ def calculate_metrics():
     except SQLAlchemyError:
         total_sessions = 0
 
+    try:
+        unique_emails = sorted({
+            p.email.strip().lower()
+            for p in all_participants
+            if p.email and p.email.strip()
+        })
+    except SQLAlchemyError:
+        unique_emails = []
+    
     return {
         "total_users": unique_joined,
         "sessions_created": total_sessions,
@@ -169,4 +178,5 @@ def calculate_metrics():
         "availability_only_participants": availability_only_count,
         "activation_rate": f"{activation_rate}%",
         "repeat_usage": f"{repeat_usage}%",
+        "unique_emails": unique_emails,
     }

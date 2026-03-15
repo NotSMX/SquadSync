@@ -124,6 +124,31 @@
     </div>
   </div>
 
+  <div class="panel mt-4 p-4">
+      <h4 class="mb-3 text-center">Registered Emails</h4>
+      <p class="text-center small mb-3" style="color: #aaa;">{{ metrics.unique_emails|length }} unique email(s) collected</p>
+      {% if metrics.unique_emails %}
+          <table class="table sessions-table">
+              <thead>
+                  <tr>
+                      <th>#</th>
+                      <th>Email</th>
+                  </tr>
+              </thead>
+              <tbody>
+                  {% for email in metrics.unique_emails %}
+                  <tr>
+                      <td>{{ loop.index }}</td>
+                      <td>{{ email }}</td>
+                  </tr>
+                  {% endfor %}
+              </tbody>
+          </table>
+      {% else %}
+          <p class="text-center small" style="color: #aaa;">No emails collected yet.</p>
+      {% endif %}
+  </div>
+
   <div class="mt-5 pt-4 border-top border-secondary">
     <h5 class="text-white-50 mb-2">Testing</h5>
     <form action="{{ url_for('main.reset_db') }}" method="POST" onsubmit="return confirm('Delete all data and reset the database?');">

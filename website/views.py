@@ -901,6 +901,24 @@ def export_db():
     }
     return jsonify(data)
 
+def _reset_sequences():
+    """Reset PostgreSQL sequences after explicit-id inserts. No-op on SQLite."""
+    if db.engine.dialect.name != "postgresql":
+        return
+    with db.engine.connect() as conn:
+        for table, col in [
+            ("session", "id"),
+            ("participant", "id"),
+            ("availability", "id"),
+            ("confirmation", "id"),
+            ("game_vote", "id"),
+        ]:
+            conn.execute(text(
+                f"SELECT setval(pg_get_serial_sequence('{table}', '{col}'), "
+                f"COALESCE((SELECT MAX({col}) FROM {table}), 0) + 1, false)"
+            ))
+        conn.commit()
+
 @main.route("/import-db", methods=["GET", "POST"])
 def import_db():
     if request.method == "GET":
@@ -980,29 +998,23 @@ def import_db():
     db.session.commit()
 
     # Reset sequences to avoid primary key collisions after explicit-id inserts
-    with db.engine.connect() as conn:
-        for table, col in [
-            ("session", "id"),
-            ("participant", "id"),
-            ("availability", "id"),
-            ("confirmation", "id"),
-            ("gamevote", "id"),
-        ]:
-            conn.execute(text(
-                f"SELECT setval(pg_get_serial_sequence('{table}', '{col}'), "
-                f"COALESCE((SELECT MAX({col}) FROM {table}), 0) + 1, false)"
-            ))
-        conn.commit()
+    _reset_sequences()
 
     flash(f"Imported {len(data.get('sessions', []))} sessions and {len(data.get('participants', []))} participants.", "success")
     return redirect(url_for("main.dashboard"))
 
 @main.route("/fix-sequences")
 def fix_sequences():
-    with db.engine.connect() as conn:
-        for table, col in [("participant","id"),("session","id"),("availability","id"),("confirmation","id"),("game_vote","id")]:
-            conn.execute(text(
-                f"SELECT setval(pg_get_serial_sequence('{table}', '{col}'), COALESCE(MAX({col}), 0) + 1, false) FROM {table}"
-            ))
-        conn.commit()
+    _reset_sequences()
     return "Sequences fixed!"
+
+@main.route("/cleanup-db")
+def cleanup_db():
+    junk_session_ids = [21, 22, 23, 24, 25, 26]
+    for sid in junk_session_ids:
+        s = Session.query.get(sid)
+        if s:
+            db.session.delete(s)
+    db.session.commit()
+    _reset_sequences()
+    return "Done! Junk sessions deleted and sequences fixed."

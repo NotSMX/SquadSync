@@ -1413,3 +1413,31 @@ def test_import_db_with_final_time(client, app):
         assert s is not None
         assert s.chosen_game == "Valorant"
         assert s.final_time is not None
+
+def test_reset_sequences_noop_on_sqlite(app):
+    """_reset_sequences should be a no-op on SQLite without raising."""
+    from website.views import _reset_sequences
+    with app.app_context():
+        _reset_sequences()
+
+def test_fix_sequences_route(client):
+    """GET /fix-sequences should return success message."""
+    res = client.get("/fix-sequences")
+    assert res.status_code == 200
+    assert b"fixed" in res.data
+
+
+def test_cleanup_db_route(client, app):
+    """GET /cleanup-db should delete junk sessions and return success message."""
+    with app.app_context():
+        for sid in [21, 22, 23, 24, 25, 26]:
+            db.session.add(Session(id=sid, title=f"Junk {sid}", is_public=False))
+        db.session.commit()
+
+    res = client.get("/cleanup-db")
+    assert res.status_code == 200
+    assert b"Done" in res.data
+
+    with app.app_context():
+        for sid in [21, 22, 23, 24, 25, 26]:
+            assert Session.query.get(sid) is None

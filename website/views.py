@@ -979,5 +979,20 @@ def import_db():
         ))
     db.session.commit()
 
+    # Reset sequences to avoid primary key collisions after explicit-id inserts
+    with db.engine.connect() as conn:
+        for table, col in [
+            ("session", "id"),
+            ("participant", "id"),
+            ("availability", "id"),
+            ("confirmation", "id"),
+            ("gamevote", "id"),
+        ]:
+            conn.execute(text(
+                f"SELECT setval(pg_get_serial_sequence('{table}', '{col}'), "
+                f"COALESCE((SELECT MAX({col}) FROM {table}), 0) + 1, false)"
+            ))
+        conn.commit()
+
     flash(f"Imported {len(data.get('sessions', []))} sessions and {len(data.get('participants', []))} participants.", "success")
     return redirect(url_for("main.dashboard"))

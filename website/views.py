@@ -80,6 +80,12 @@ def list_sessions():
         sessions=sessions_data
     )
 
+def strip_tz(dt):
+    """Convert to UTC then strip timezone for naive storage."""
+    if dt.tzinfo is not None:
+        from datetime import timezone
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 def _ensure_game_election_schema():
     """Ensure DB has columns/tables needed for game election (handles old SQLite DBs)."""
@@ -547,24 +553,21 @@ def add_availability_from_calendar(session_hash):
         return redirect(url_for(
             "main.view_session", session_hash=session_hash, token=participant_token
         ))
-
+    
     if not start_str or not end_str:
         return fail_json("Missing start or end time.")
-    
+
     start_str = start_str.replace("Z", "+00:00")
     end_str = end_str.replace("Z", "+00:00")
-    start_dt = datetime.fromisoformat(start_str)
-    end_dt = datetime.fromisoformat(end_str)
 
     try:
-        start_dt = datetime.fromisoformat(start_str)
-        end_dt = datetime.fromisoformat(end_str)
+        start_dt = strip_tz(datetime.fromisoformat(start_str))
+        end_dt = strip_tz(datetime.fromisoformat(end_str))
     except ValueError:
         return fail_json("Invalid time format.")
 
     if start_dt >= end_dt:
         return fail_json("End must be after start.")
-
     db.session.add(Availability(
         session_id=game_session.id,
         participant_id=participant.id,
@@ -628,10 +631,10 @@ def remove_availability_from_calendar(session_hash):
     end_str = end_str.replace("Z", "+00:00")
 
     try:
-        start_dt = datetime.fromisoformat(start_str)
-        end_dt = datetime.fromisoformat(end_str)
+        start_dt = strip_tz(datetime.fromisoformat(start_str))  
+        end_dt = strip_tz(datetime.fromisoformat(end_str))     
     except ValueError:
-        return fail("Invalid time format.")
+         return fail("Invalid time format.")
 
     block = Availability.query.filter_by(
         session_id=game_session.id,

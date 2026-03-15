@@ -100,7 +100,8 @@ document.addEventListener('DOMContentLoaded', function() {
         selectMirror: false,
         selectOverlap: true,
         longPressDelay: 300,
-        selectLongPressDelay: 300,  
+        selectLongPressDelay: 300, 
+        timeZone: 'UTC', 
 
         select: function(info) {
             if (!canSelect || !sessionHash || !token) return;

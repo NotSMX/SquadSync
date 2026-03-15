@@ -16,7 +16,6 @@ from website import create_app, db
 from website.models import Session, Participant, Availability, Confirmation, GameVote
 from website.views import (
     _intersect_intervals, _build_game_tally, _build_grouped_json,
-    _session_state_hash, _sse_generate,
 )
 
 
@@ -883,12 +882,6 @@ def test_session_state_hash_includes_availability(app):
         assert hash_before != hash_after
 
 
-# ── lines 752-844: _sse_generate generator — all branches ────────────────────
-#
-# Strategy: monkeypatch website.views._time so time.time() returns controlled
-# values and time.sleep() is a no-op.  Each test collects exactly the events
-# it needs, then stops iterating.
-
 def _fake_time_factory(start_val=0.0, step=0.0):
     """Return a fake time module whose .time() advances by `step` each call."""
     import types
@@ -901,161 +894,6 @@ def _fake_time_factory(start_val=0.0, step=0.0):
 
     mod = types.SimpleNamespace(time=fake_time, sleep=lambda _: None)
     return mod
-
-
-def test_sse_generate_initial_state_event(app, monkeypatch, sample_session):
-    """Generator should yield a 'state' event on the first iteration."""
-    import website.views as vmod
-
-    fake_t = _fake_time_factory(start_val=0.0, step=0.0)
-    # First two calls: last_keepalive=0, start=0; loop check 0-0=0 < 300 → enter
-    # After one event we stop, so MAX_DURATION never expires
-    monkeypatch.setattr(vmod, "_time", fake_t)
-    monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 300)
-
-    with app.app_context():
-        gen = _sse_generate(sample_session["session_hash"])
-        first = next(gen)
-
-    assert first.startswith("event: state\n")
-    import json
-    payload = json.loads(first.split("data: ", 1)[1].strip())
-    assert "availability" in payload
-    assert "Host" in payload["participants"]
-
-
-def test_sse_generate_no_duplicate_event_same_hash(app, monkeypatch, sample_session):
-    """Generator should NOT re-emit a state event when nothing changed."""
-    import website.views as vmod
-
-    # time advances just enough to stay under MAX_DURATION for 3 iterations
-    call_count = [0]
-    def fake_time():
-        call_count[0] += 1
-        return float(call_count[0])  # 1, 2, 3 … all < 300
-
-    fake_t = __import__("types").SimpleNamespace(time=fake_time, sleep=lambda _: None)
-    monkeypatch.setattr(vmod, "_time", fake_t)
-    monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 300)
-
-    with app.app_context():
-        gen = _sse_generate(sample_session["session_hash"])
-        first = next(gen)          # first iteration — state event emitted
-        assert first.startswith("event: state\n")
-
-        # Second iteration: hash unchanged → no state event; keepalive not due
-        # Generator should loop back and sleep, then we force StopIteration
-        # by limiting MAX_DURATION to expire after the second time() call.
-        monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 3)
-        final = next(gen)
-        assert final == "event: reconnect\ndata: {}\n\n"
-
-
-def test_sse_generate_gone_when_session_deleted(app, monkeypatch, sample_session):
-    """Generator should yield 'gone' and stop if the session is deleted mid-stream."""
-    import website.views as vmod
-    from website import db as _db
-
-    fake_t = _fake_time_factory(start_val=0.0, step=0.0)
-    monkeypatch.setattr(vmod, "_time", fake_t)
-    monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 300)
-
-    with app.app_context():
-        gen = _sse_generate(sample_session["session_hash"])
-        next(gen)  # consume initial state event
-
-        # Delete the session
-        s = Session.query.get(sample_session["session_id"])
-        for p in s.participants:
-            _db.session.delete(p)
-        _db.session.delete(s)
-        _db.session.commit()
-
-        event = next(gen)
-        assert event == "event: gone\ndata: {}\n\n"
-
-
-def test_sse_generate_keepalive(app, monkeypatch, sample_session):
-    """Generator should yield a keepalive comment when KEEPALIVE_EVERY seconds pass."""
-    import website.views as vmod
-
-    # Simulate: start=0, first loop time=0 (state emitted), then time jumps to 16
-    # so keepalive fires (16 - 0 >= 15)
-    times = iter([0.0, 0.0, 16.0, 16.0, 400.0])  # last value expires the loop
-    fake_t = __import__("types").SimpleNamespace(
-        time=lambda: next(times), sleep=lambda _: None
-    )
-    monkeypatch.setattr(vmod, "_time", fake_t)
-    monkeypatch.setattr(vmod, "_SSE_KEEPALIVE_EVERY", 15)
-    monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 300)
-
-    with app.app_context():
-        gen = _sse_generate(sample_session["session_hash"])
-        first = next(gen)
-        assert first.startswith("event: state\n")
-        second = next(gen)
-        assert second == ": keepalive\n\n"
-
-
-def test_sse_generate_exception_yields_error_comment(app, monkeypatch, sample_session):
-    """Generator should yield ': error' comment on DB exception and continue."""
-    import website.views as vmod
-    from website.models import Session as S
-
-    call_count = [0]
-    def fake_time():
-        call_count[0] += 1
-        return 1.0 if call_count[0] < 10 else 400.0
-
-    fake_t = __import__("types").SimpleNamespace(time=fake_time, sleep=lambda _: None)
-    monkeypatch.setattr(vmod, "_time", fake_t)
-    monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 300)
-
-    original_query = S.query
-
-    patched = [False]
-    class BrokenQuery:
-        def filter_by(self, **_):
-            if not patched[0]:
-                patched[0] = True
-                raise Exception("DB exploded")
-            return original_query.filter_by(**_)
-
-    monkeypatch.setattr(S, "query", BrokenQuery())
-
-    with app.app_context():
-        gen = _sse_generate(sample_session["session_hash"])
-        first = next(gen)
-        assert first == ": error\n\n"
-
-
-def test_sse_generate_reconnect_on_expiry(app, monkeypatch, sample_session):
-    """Generator should yield 'reconnect' event when MAX_DURATION expires."""
-    import website.views as vmod
-
-    # Make time() immediately exceed MAX_DURATION after the first state push
-    times = iter([0.0, 0.0, 400.0])
-    fake_t = __import__("types").SimpleNamespace(
-        time=lambda: next(times), sleep=lambda _: None
-    )
-    monkeypatch.setattr(vmod, "_time", fake_t)
-    monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 300)
-
-    with app.app_context():
-        gen = _sse_generate(sample_session["session_hash"])
-        next(gen)  # state event
-        final = next(gen)
-        assert final == "event: reconnect\ndata: {}\n\n"
-
-
-def test_stream_session_route_returns_event_stream(client, sample_session):
-    """GET /stream should return 200 with text/event-stream content type."""
-    res = client.get(
-        f"/session/{sample_session['session_hash']}/stream",
-        headers={"Accept": "text/event-stream"},
-    )
-    assert res.status_code == 200
-    assert "text/event-stream" in res.content_type
 
 def test_notify_and_flash_success(monkeypatch, app):
     """_notify_and_flash should flash success when emails sent."""
@@ -1184,18 +1022,6 @@ def test_session_state_hash_with_votes_and_confirm(app):
 
         assert before != after
 
-def test_sse_error_branch(app, monkeypatch, sample_session):
-    """Force exception inside SSE generator."""
-    import website.views as vmod
-
-    monkeypatch.setattr(vmod, "_session_state_hash", lambda x: 1/0)
-
-    with app.app_context():
-        gen = vmod._sse_generate(sample_session["session_hash"])
-        event = next(gen)
-
-    assert event == ": error\n\n"
-
 def test_availability_post_data_not_list(client, sample_session):
     """JSON object (not list) in availability_data should be treated as empty."""
     res = client.post(
@@ -1303,38 +1129,6 @@ def test_session_state_with_votes(client, sample_session, app):
     assert any(g["name"] == "Pandemic" for g in data["game_tally"])
 
 
-def test_sse_generate_state_payload_includes_votes_and_confirmations(app, 
-monkeypatch, sample_session):
-    """SSE state event payload should include game_tally and confirmations when present."""
-    import website.views as vmod
-    import json as _json
-
-    with app.app_context():
-        db.session.add(GameVote(
-            session_id=sample_session["session_id"],
-            participant_id=sample_session["host_id"],
-            game_name="Catan"
-        ))
-        db.session.add(Confirmation(
-            session_id=sample_session["session_id"],
-            participant_id=sample_session["host_id"],
-            status="yes"
-        ))
-        db.session.commit()
-
-    fake_t = __import__("types").SimpleNamespace(time=lambda: 0.0, sleep=lambda _: None)
-    monkeypatch.setattr(vmod, "_time", fake_t)
-    monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 300)
-
-    with app.app_context():
-        gen = _sse_generate(sample_session["session_hash"])
-        first = next(gen)
-
-    assert first.startswith("event: state\n")
-    payload = _json.loads(first.split("data: ", 1)[1].strip())
-    assert any(g["name"] == "Catan" for g in payload["game_tally"])
-    assert payload["confirmations"].get("Host") == "yes"
-
 # ── _ensure_game_election_schema: conn.commit() after successful ALTER ────────
 
 def test_ensure_schema_commit_branch(client, app):
@@ -1439,35 +1233,6 @@ def test_remove_availability_non_xhr_invalid_time(client, sample_session):
         }
     )
     assert res.status_code == 302
-
-
-# ── _sse_generate: gone, reconnect, keepalive last_keepalive=now branch ──────
-
-def test_sse_generate_keepalive_updates_last_keepalive(app, monkeypatch, sample_session):
-    """After a keepalive, last_keepalive should reset so next keepalive is delayed."""
-    import website.views as vmod
-
-    # time sequence: start=0, loop1 check=0 (state), now=16 (keepalive fires),
-    # last_keepalive becomes 16; loop2 now=17 (< 16+15=31, no second keepalive),
-    # then 400 to expire
-    times = iter([0.0, 0.0, 16.0, 16.0, 17.0, 17.0, 400.0])
-    fake_t = __import__("types").SimpleNamespace(
-        time=lambda: next(times), sleep=lambda _: None
-    )
-    monkeypatch.setattr(vmod, "_time", fake_t)
-    monkeypatch.setattr(vmod, "_SSE_KEEPALIVE_EVERY", 15)
-    monkeypatch.setattr(vmod, "_SSE_MAX_DURATION", 300)
-
-    with app.app_context():
-        gen = _sse_generate(sample_session["session_hash"])
-        first = next(gen)
-        assert first.startswith("event: state\n")
-        second = next(gen)
-        assert second == ": keepalive\n\n"
-        # Third event: time=400 triggers reconnect, NOT a second keepalive
-        third = next(gen)
-        assert third == "event: reconnect\ndata: {}\n\n"
-
 
 # ── seed_test_data route ──────────────────────────────────────────────────────
 

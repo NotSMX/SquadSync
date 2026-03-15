@@ -957,8 +957,7 @@ def _sse_generate(session_hash):
                     })
 
                     yield f"event: state\ndata: {payload}\n\n"
-                    yield ": \n\n"
-
+                    
                 now = _time.time()
 
                 if now - start >= _SSE_MAX_DURATION:

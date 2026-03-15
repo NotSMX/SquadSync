@@ -132,8 +132,19 @@
         if (!confirmations) return;
         Object.keys(confirmations).forEach(function(name) {
             var status = confirmations[name];
-            var el = document.querySelector('[data-confirm-name="' + CSS.escape(name) + '"]');
-            if (el) el.dataset.confirmStatus = status;
+            var card = document.querySelector('.squad-card[data-name="' + CSS.escape(name) + '"]');
+            if (!card) return;
+            var pill = card.querySelector('.status-pill');
+            if (!pill) {
+                pill = document.createElement('span');
+                card.appendChild(pill);
+            }
+            pill.className = 'status-pill ' + (
+                status === 'Yes' ? 's-yes' :
+                status === 'Maybe' ? 's-maybe' :
+                status === 'No' ? 's-no' : 's-none'
+            );
+            pill.textContent = status || 'No Response';
         });
     }
 

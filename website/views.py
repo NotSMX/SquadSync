@@ -550,18 +550,11 @@ def add_availability_from_calendar(session_hash):
 
     if not start_str or not end_str:
         return fail_json("Missing start or end time.")
-
-    def parse_local(s):
-        if not s:
-            return None
-        s = str(s).strip().replace("Z", "").replace("+00:00", "")
-        try:
-            return datetime.fromisoformat(s)
-        except ValueError:
-            return None
-
-    start_dt = parse_local(start_str)
-    end_dt = parse_local(end_str)
+    
+    start_str = start_str.replace("Z", "+00:00")
+    end_str = end_str.replace("Z", "+00:00")
+    start_dt = datetime.fromisoformat(start_str)
+    end_dt = datetime.fromisoformat(end_str)
 
     try:
         start_dt = datetime.fromisoformat(start_str)

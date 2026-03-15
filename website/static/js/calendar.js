@@ -63,7 +63,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 .filter(function(e) { return e.title === myName; })
                 .forEach(function(e) {
                     var fd = new FormData();
-                    fd.append('token', token); fd.append('start', e.startStr); fd.append('end', e.endStr);
+                    fd.append('token', token); 
+                    fd.append('start', e.start.toISOString());
+                    fd.append('end', e.end.toISOString());
                     fetch('/session/' + sessionHash + '/remove_availability', {
                         method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
                     });
@@ -109,7 +111,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         })
                         .forEach(function(e) {
                             var fd = new FormData();
-                            fd.append('token', token); fd.append('start', e.startStr); fd.append('end', e.endStr);
+                            fd.append('token', token); 
+                            fd.append('start', e.start.toISOString());
+                            fd.append('end', e.end.toISOString());
                             fetch('/session/' + sessionHash + '/remove_availability', {
                                 method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
                             });
@@ -160,8 +164,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             var oldFd = new FormData();
             oldFd.append('token', token);
-            oldFd.append('start', info.oldEvent.startStr);
-            oldFd.append('end', info.oldEvent.endStr);
+            oldFd.append('start', info.oldEvent.start.toISOString());  // ← changed
+            oldFd.append('end', info.oldEvent.end.toISOString()); 
             fetch('/session/' + sessionHash + '/remove_availability', {
                 method: 'POST', body: oldFd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
@@ -171,8 +175,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 var newFd = new FormData();
                 newFd.append('token', token);
-                newFd.append('start', info.event.startStr);
-                newFd.append('end', info.event.endStr);
+                newFd.append('start', info.event.start.toISOString());  // ← changed
+                newFd.append('end', info.event.end.toISOString());  
                 return fetch('/session/' + sessionHash + '/add_availability', {
                     method: 'POST', body: newFd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
                 });
@@ -186,8 +190,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function removeEvent(event) {
         var fd = new FormData();
         fd.append('token', token);
-        fd.append('start', event.startStr);
-        fd.append('end', event.endStr);
+        fd.append('start', event.start.toISOString());
+        fd.append('end', event.end.toISOString());
         fetch('/session/' + sessionHash + '/remove_availability', {
             method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })

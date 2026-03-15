@@ -1053,23 +1053,31 @@ def import_db():
     Session.query.delete()
     db.session.commit()
 
-    # Re-insert sessions
+    # Insert sessions without host_id first
     for s in data.get("sessions", []):
         db.session.add(Session(
             id=s["id"], title=s["title"], hash_id=s["hash_id"],
-            host_id=s["host_id"], chosen_game=s["chosen_game"],
+            host_id=None,  # ← set to None initially
+            chosen_game=s["chosen_game"],
             is_public=s["is_public"],
             final_time=datetime.fromisoformat(s["final_time"]) if s.get("final_time") else None,
             datetime=datetime.fromisoformat(s["datetime"]) if s.get("datetime") else None,
         ))
     db.session.commit()
 
-    # Re-insert participants
+    # Insert participants
     for p in data.get("participants", []):
         db.session.add(Participant(
             id=p["id"], name=p["name"], email=p["email"],
             session_id=p["session_id"], token=p["token"],
+            created_at=datetime.fromisoformat(p["created_at"]) if p.get("created_at") else None,
         ))
+    db.session.commit()
+
+    # Now update host_id now that participants exist
+    for s in data.get("sessions", []):
+        if s.get("host_id"):
+            Session.query.filter_by(id=s["id"]).update({"host_id": s["host_id"]})
     db.session.commit()
 
     # Re-insert availability

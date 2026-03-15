@@ -46,8 +46,10 @@ def dashboard():
 
 @main.route("/reset-db", methods=["POST"])
 def reset_db():
-    """Drop all tables and recreate (for testing)."""
-    db.drop_all()
+    from sqlalchemy import text
+    with db.engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS game_vote, confirmation, availability, participant, session, \"user\" CASCADE"))
+        conn.commit()
     db.create_all()
     flash("Database reset.", "success")
     return redirect(url_for("main.dashboard"))
@@ -803,26 +805,26 @@ def seed_test_data():
     s1 = Session(title="User A Session 1", is_public=True, datetime=now - timedelta(days=6))
     s2 = Session(title="User A Session 2", is_public=True, datetime=now - timedelta(days=3))
     db.session.add_all([s1, s2])
-    db.session.commit()
+    db.session.flush()
 
     a1 = Participant(name="Alice", email="alice@test.com", session_id=s1.id)
     db.session.add(a1)
-    db.session.commit()
+    db.session.flush()
     s1.host_id = a1.id
 
     a2 = Participant(name="Alice", email="alice@test.com", session_id=s2.id)
     db.session.add(a2)
-    db.session.commit()
+    db.session.flush()
     s2.host_id = a2.id
 
     # ── User B: same-day activity only (should NOT count as repeat) ──────
     s3 = Session(title="User B Session", is_public=True, datetime=now - timedelta(hours=2))
     db.session.add(s3)
-    db.session.commit()
+    db.session.flush()
 
     b1 = Participant(name="Bob", email="bob@test.com", session_id=s3.id)
     db.session.add(b1)
-    db.session.commit()
+    db.session.flush()
     s3.host_id = b1.id
 
     c1 = Confirmation(participant_id=b1.id, session_id=s3.id, status="yes",
@@ -833,26 +835,26 @@ def seed_test_data():
     s4 = Session(title="User C Session 1", is_public=True, datetime=now - timedelta(days=12))
     s5 = Session(title="User C Session 2", is_public=True, datetime=now - timedelta(days=2))
     db.session.add_all([s4, s5])
-    db.session.commit()
+    db.session.flush()
 
     c_p1 = Participant(name="Carol", email="carol@test.com", session_id=s4.id)
     db.session.add(c_p1)
-    db.session.commit()
+    db.session.flush()
     s4.host_id = c_p1.id
 
     c_p2 = Participant(name="Carol", email="carol@test.com", session_id=s5.id)
     db.session.add(c_p2)
-    db.session.commit()
+    db.session.flush()
     s5.host_id = c_p2.id
 
     # ── User D: joined but no activity (not activated) ───────────────────
     s6 = Session(title="Host Session", is_public=True, datetime=now)
     db.session.add(s6)
-    db.session.commit()
+    db.session.flush()
 
     host = Participant(name="Host", email="host@test.com", session_id=s6.id)
     db.session.add(host)
-    db.session.commit()
+    db.session.flush()
     s6.host_id = host.id
 
     d1 = Participant(name="Dave", email="dave@test.com", session_id=s6.id)
@@ -861,7 +863,7 @@ def seed_test_data():
     # ── User E: confirmed (activated, not repeat) ─────────────────────────
     e1 = Participant(name="Eve", email="eve@test.com", session_id=s6.id)
     db.session.add(e1)
-    db.session.commit()
+    db.session.flush()
 
     conf_e = Confirmation(participant_id=e1.id, session_id=s6.id, status="yes",
                           created_at=now - timedelta(days=1))

@@ -23,7 +23,6 @@
     es = new EventSource(`/session/${hash}/stream`);
 
     es.addEventListener("state", (e) => {
-    console.log("SSE state received:", e.data);  // ← add this
       try {
         const data = JSON.parse(e.data);
         applyState(data);
@@ -54,7 +53,6 @@
   // ── state application ─────────────────────────────────────────────────────
 
     function applyState(data) {
-        console.log("final_time:", data.final_time);
         updateCalendar(data.availability);
         updateParticipants(data.participants);
         updateGameTally(data.game_tally, data.chosen_game);

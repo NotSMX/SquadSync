@@ -11,3 +11,5 @@ python-dotenv==0.21.0
 requests==2.26.0
 authlib==1.6.5
 SQLAlchemy==2.0.44
+gevent==23.9.1
+greenlet==3.0.1

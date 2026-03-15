@@ -861,6 +861,8 @@ def stream_session(session_hash):
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
+            "X-Content-Type-Options": "nosniff",
+            "Transfer-Encoding": "chunked", 
         },
     )
 

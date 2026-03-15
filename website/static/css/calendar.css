@@ -6,3 +6,8 @@
 .fc-event:not(.fc-event-mine) {
     pointer-events: none !important;
 }
+
+#group-calendar .fc-timegrid-slots td,
+#group-calendar .fc-timegrid-col {
+    touch-action: manipulation;
+}

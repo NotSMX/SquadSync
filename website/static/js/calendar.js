@@ -83,7 +83,7 @@ document.addEventListener('DOMContentLoaded', function() {
         selectable: canSelect,
         editable: canSelect,
         selectMirror: false,
-        selectOverlap: () => true,
+        selectOverlap: true,
         longPressDelay: 300,
         selectLongPressDelay: 300,  
 

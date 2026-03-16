@@ -73,7 +73,21 @@ def test_index(client):
 
 def test_dashboard(client, monkeypatch):
     """Dashboard should render with mocked metrics."""
-    monkeypatch.setattr("website.metrics.calculate_metrics", lambda: {"sessions": 1})
+    monkeypatch.setattr("website.metrics.calculate_metrics", lambda: {
+        "total_users": 0,
+        "sessions_created": 0,
+        "confirmed_participants": 0,
+        "availability_only_participants": 0,
+        "activation_rate": "0%",
+        "repeat_usage": "0%",
+        "unique_emails": [],
+        "multi_participant_rate": "0%",
+        "completion_rate": "0%",
+        "avg_participants": 0,
+        "sessions_with_votes_pct": "0%",
+        "top_games": [],
+        "confirmation_breakdown": {"Yes": 0, "Maybe": 0, "No": 0},
+    })
     res = client.get("/dashboard")
     assert res.status_code == 200
 

@@ -1,163 +1,205 @@
 {% extends "base.html" %}
 
 {% block content %}
-<style>
-  .dashboard-game {
-    background: linear-gradient(135deg, #0f0c29 0%, #1a0a2e 30%, #16213e 60%, #0f3460 100%);
-    min-height: 80vh;
-    border-radius: 16px;
-    padding: 2rem;
-    position: relative;
-    overflow: hidden;
-  }
-  .dashboard-game::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background-image: radial-gradient(circle at 20% 80%, rgba(0, 255, 255, 0.06) 0%, transparent 50%),
-                      radial-gradient(circle at 80% 20%, rgba(255, 0, 128, 0.06) 0%, transparent 50%);
-    pointer-events: none;
-  }
-  .dashboard-game .dashboard-title {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    font-weight: 800;
-    font-size: 1.75rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    background: linear-gradient(90deg, #00ffff, #ff00aa, #00ff88);
-    background-size: 200% auto;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 1.5rem;
-  }
-  .dashboard-game .stat-card {
-    background: rgba(15, 20, 45, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 1.25rem;
-    text-align: center;
-    transition: transform 0.2s, box-shadow 0.2s;
-    position: relative;
-  }
-  .dashboard-game .stat-card:hover {
-    transform: translateY(-4px);
-  }
-  .dashboard-game .stat-card.cyan { box-shadow: 0 0 20px rgba(0, 255, 255, 0.25); border-color: rgba(0, 255, 255, 0.4); }
-  .dashboard-game .stat-card.magenta { box-shadow: 0 0 20px rgba(255, 0, 128, 0.25); border-color: rgba(255, 0, 128, 0.4); }
-  .dashboard-game .stat-card.lime { box-shadow: 0 0 20px rgba(0, 255, 136, 0.25); border-color: rgba(0, 255, 136, 0.4); }
-  .dashboard-game .stat-card.orange { box-shadow: 0 0 20px rgba(255, 165, 0, 0.25); border-color: rgba(255, 165, 0, 0.4); }
-  .dashboard-game .stat-card.purple { box-shadow: 0 0 20px rgba(168, 85, 247, 0.25); border-color: rgba(168, 85, 247, 0.4); }
-  .dashboard-game .stat-card .stat-label {
-    font-size: 0.8rem;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 0.5rem;
-  }
-  .dashboard-game .stat-card.cyan .stat-label { color: #00ffff; }
-  .dashboard-game .stat-card.magenta .stat-label { color: #ff00aa; }
-  .dashboard-game .stat-card.lime .stat-label { color: #00ff88; }
-  .dashboard-game .stat-card.orange .stat-label { color: #ffa500; }
-  .dashboard-game .stat-card.purple .stat-label { color: #a855f7; }
-  .dashboard-game .stat-card .stat-value {
-    font-size: 2rem;
-    font-weight: 800;
-    color: #fff;
-    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-  }
-  .dashboard-game .stat-card .stat-hint {
-    font-size: 0.7rem;
-    color: rgba(255, 255, 255, 0.5);
-    margin-top: 0.35rem;
-  }
-</style>
 
 <div class="dashboard-game">
   <h2 class="dashboard-title">KPI Dashboard</h2>
 
+  <!-- Row 1: Core user metrics -->
+  <p class="section-label">Users</p>
   <div class="row g-3 mb-4">
     <div class="col-md-3">
       <div class="stat-card cyan">
-        <div class="stat-label">Unique participants (joined)</div>
+        <div class="stat-label">Unique participants</div>
         <div class="stat-value">{{ metrics.total_users }}</div>
         <div class="stat-hint">1 per person across sessions</div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="stat-card magenta">
-        <div class="stat-label">Sessions Created (Total)</div>
-        <div class="stat-value">{{ metrics.sessions_created }}</div>
-        <div class="stat-hint">Total Sessions Created, Yay!</div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="stat-card orange">
-        <div class="stat-label">Availability only</div>
-        <div class="stat-value">{{ metrics.availability_only_participants }}</div>
-        <div class="stat-hint">Submitted time slots, no confirmation</div>
       </div>
     </div>
     <div class="col-md-3">
       <div class="stat-card lime">
         <div class="stat-label">Confirmed participants</div>
         <div class="stat-value">{{ metrics.confirmed_participants }}</div>
-        <div class="stat-hint">RSVP’d for ≥1 session</div>
+        <div class="stat-hint">RSVP'd for ≥1 session</div>
       </div>
     </div>
-  </div>
-
-  <div class="row g-3 mb-4">
-    <div class="col-md-6">
+    <div class="col-md-3">
       <div class="stat-card orange">
-        <div class="stat-label">Activation Rate</div>
-        <div class="stat-value">{{ metrics.activation_rate }}</div>
-        <div class="stat-hint">% users who created or confirmed for ≥1 session</div>
+        <div class="stat-label">Availability only</div>
+        <div class="stat-value">{{ metrics.availability_only_participants }}</div>
+        <div class="stat-hint">Submitted slots, no confirmation</div>
       </div>
     </div>
-    <div class="col-md-6">
+    <div class="col-md-3">
       <div class="stat-card purple">
-        <div class="stat-label">Repeat Usage</div>
+        <div class="stat-label">Repeat usage</div>
         <div class="stat-value">{{ metrics.repeat_usage }}</div>
-        <div class="stat-hint">% users who returned within 7 days</div>
+        <div class="stat-hint">% who returned within 7 days</div>
       </div>
     </div>
   </div>
 
-  <div class="panel mt-4 p-4">
-      <h4 class="mb-3 text-center">Registered Emails</h4>
-      <p class="text-center small mb-3" style="color: #aaa;">{{ metrics.unique_emails|length }} unique email(s) collected</p>
-      {% if metrics.unique_emails %}
-          <table class="table sessions-table">
-              <thead>
-                  <tr>
-                      <th>#</th>
-                      <th>Email</th>
-                  </tr>
-              </thead>
-              <tbody>
-                  {% for email in metrics.unique_emails %}
-                  <tr>
-                      <td>{{ loop.index }}</td>
-                      <td>{{ email }}</td>
-                  </tr>
-                  {% endfor %}
-              </tbody>
-          </table>
-      {% else %}
-          <p class="text-center small" style="color: #aaa;">No emails collected yet.</p>
-      {% endif %}
+  <!-- Row 2: Session metrics -->
+  <hr class="section-divider">
+  <p class="section-label">Sessions</p>
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="stat-card magenta">
+        <div class="stat-label">Sessions created</div>
+        <div class="stat-value">{{ metrics.sessions_created }}</div>
+        <div class="stat-hint">All time</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-card teal">
+        <div class="stat-label">Groups with &gt;1 participant</div>
+        <div class="stat-value">{{ metrics.multi_participant_rate }}</div>
+        <div class="stat-hint">Sessions someone actually joined</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-card blue">
+        <div class="stat-label">Completion rate</div>
+        <div class="stat-value">{{ metrics.completion_rate }}</div>
+        <div class="stat-hint">% sessions with a final time set</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-card cyan">
+        <div class="stat-label">Avg participants</div>
+        <div class="stat-value">{{ metrics.avg_participants }}</div>
+        <div class="stat-hint">Per session</div>
+      </div>
+    </div>
   </div>
 
+  <!-- Row 3: Engagement -->
+  <hr class="section-divider">
+  <p class="section-label">Engagement</p>
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="stat-card orange">
+        <div class="stat-label">Activation rate</div>
+        <div class="stat-value">{{ metrics.activation_rate }}</div>
+        <div class="stat-hint">% who hosted or confirmed ≥1 session</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="stat-card lime">
+        <div class="stat-label">Sessions with game votes</div>
+        <div class="stat-value">{{ metrics.sessions_with_votes_pct }}</div>
+        <div class="stat-hint">At least one vote cast</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <!-- placeholder for future metric -->
+      <div class="stat-card purple">
+        <div class="stat-label">Unique emails collected</div>
+        <div class="stat-value">{{ metrics.unique_emails | length }}</div>
+        <div class="stat-hint">Across all sessions</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 4: Top games + Confirmation breakdown -->
+  <hr class="section-divider">
+  <p class="section-label">Votes & confirmations</p>
+  <div class="row g-3 mb-4">
+
+    <div class="col-md-6">
+      <div class="stat-card teal" style="text-align:left;">
+        <div class="stat-label" style="color:#00d2b4;">Top voted games</div>
+        {% if metrics.top_games %}
+          {% set max_votes = metrics.top_games[0][1] %}
+          <div style="margin-top: 0.75rem;">
+            {% for game_name, count in metrics.top_games %}
+            <div class="game-bar-row">
+              <span class="game-bar-label">{{ game_name }}</span>
+              <div class="game-bar-track">
+                <div class="game-bar-fill" style="width: {{ (count / max_votes * 100) | int }}%"></div>
+              </div>
+              <span class="game-bar-count">{{ count }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="color: rgba(255,255,255,0.4); font-size: 0.8rem; margin-top: 0.75rem;">No votes yet.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="stat-card magenta" style="text-align:left;">
+        <div class="stat-label" style="color:#ff00aa;">Confirmation breakdown</div>
+        {% set cb = metrics.confirmation_breakdown %}
+        {% set total_confirmations = cb.Yes + cb.Maybe + cb.No %}
+        <div style="margin-top: 0.75rem;">
+          <div class="confirm-bar-row">
+            <span class="confirm-bar-label" style="color: #00ff88;">Yes</span>
+            <div class="confirm-bar-track">
+              <div class="confirm-bar-fill" style="width: {{ ((cb.Yes / total_confirmations * 100) | int) if total_confirmations else 0 }}%; height:100%; border-radius:3px; background:#00ff88;"></div>
+            </div>
+            <span class="confirm-bar-count">{{ cb.Yes }}</span>
+          </div>
+          <div class="confirm-bar-row">
+            <span class="confirm-bar-label" style="color: #ffa500;">Maybe</span>
+            <div class="confirm-bar-track">
+              <div class="confirm-bar-fill" style="width: {{ ((cb.Maybe / total_confirmations * 100) | int) if total_confirmations else 0 }}%; height:100%; border-radius:3px; background:#ffa500;"></div>
+            </div>
+            <span class="confirm-bar-count">{{ cb.Maybe }}</span>
+          </div>
+          <div class="confirm-bar-row">
+            <span class="confirm-bar-label" style="color: #ff4444;">No</span>
+            <div class="confirm-bar-track">
+              <div class="confirm-bar-fill" style="width: {{ ((cb.No / total_confirmations * 100) | int) if total_confirmations else 0 }}%; height:100%; border-radius:3px; background:#ff4444;"></div>
+            </div>
+            <span class="confirm-bar-count">{{ cb.No }}</span>
+          </div>
+          {% if total_confirmations == 0 %}
+          <p style="color: rgba(255,255,255,0.4); font-size: 0.8rem;">No confirmations yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Emails table -->
+  <div class="panel mt-4 p-4">
+    <h4 class="mb-3 text-center">Registered emails</h4>
+    <p class="text-center small mb-3" style="color: #aaa;">{{ metrics.unique_emails|length }} unique email(s) collected</p>
+    {% if metrics.unique_emails %}
+      <table class="table sessions-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Email</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for email in metrics.unique_emails %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ email }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-center small" style="color: #aaa;">No emails collected yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Testing tools -->
   <div class="mt-5 pt-4 border-top border-secondary">
     <h5 class="text-white-50 mb-2">Testing</h5>
     <form action="{{ url_for('main.reset_db') }}" method="POST" onsubmit="return confirm('Delete all data and reset the database?');">
       <button type="submit" class="btn btn-outline-danger">Reset database</button>
     </form>
   </div>
-  
+
   <form method="POST" action="/seed-test-data">
-    <button class="btn btn-outline-primary btn-sm">Seed Test Data</button>
+    <button class="btn btn-outline-primary btn-sm">Seed test data</button>
   </form>
+
 </div>
 {% endblock %}

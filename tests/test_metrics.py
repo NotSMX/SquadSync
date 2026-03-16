@@ -9,6 +9,7 @@ Unit tests for website/metrics.py
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from website import create_app, db
 from website.models import Session, Participant, Availability, Confirmation
@@ -124,6 +125,12 @@ def test_calculate_metrics_no_data(app):
     assert metrics["confirmed_participants"] == 0
     assert metrics["activation_rate"] == "0%"
     assert metrics["repeat_usage"] == "0%"
+    assert metrics["multi_participant_rate"] == "0%"
+    assert metrics["completion_rate"] == "0%"
+    assert metrics["avg_participants"] == 0
+    assert metrics["sessions_with_votes_pct"] == "0%"
+    assert metrics["top_games"] == []
+    assert metrics["confirmation_breakdown"] == {"Yes": 0, "Maybe": 0, "No": 0}
 
 
 def test_calculate_metrics_availability_and_confirmation(app):
@@ -335,3 +342,36 @@ def test_calculate_metrics_participant_query_fails(monkeypatch, app):
 
     assert metrics["total_users"] == 0
     assert metrics["sessions_created"] == 0
+    
+def _raiser(*a, **kw):
+    raise SQLAlchemyError("fail")
+
+def test_multi_participant_rate_db_error(monkeypatch, app):
+    monkeypatch.setattr("website.metrics._sessions_with_multiple_participants", _raiser)
+    with app.app_context():
+        assert calculate_metrics()["multi_participant_rate"] == "0%"
+
+def test_completion_rate_db_error(monkeypatch, app):
+    monkeypatch.setattr("website.metrics._session_completion_rate", _raiser)
+    with app.app_context():
+        assert calculate_metrics()["completion_rate"] == "0%"
+
+def test_avg_participants_db_error(monkeypatch, app):
+    monkeypatch.setattr("website.metrics._avg_participants_per_session", _raiser)
+    with app.app_context():
+        assert calculate_metrics()["avg_participants"] == 0
+
+def test_sessions_with_votes_db_error(monkeypatch, app):
+    monkeypatch.setattr("website.metrics._sessions_with_votes", _raiser)
+    with app.app_context():
+        assert calculate_metrics()["sessions_with_votes_pct"] == "0%"
+
+def test_top_games_db_error(monkeypatch, app):
+    monkeypatch.setattr("website.metrics._top_games", _raiser)
+    with app.app_context():
+        assert calculate_metrics()["top_games"] == []
+
+def test_confirmation_breakdown_db_error(monkeypatch, app):
+    monkeypatch.setattr("website.metrics._confirmation_breakdown", _raiser)
+    with app.app_context():
+        assert calculate_metrics()["confirmation_breakdown"] == {"Yes": 0, "Maybe": 0, "No": 0}

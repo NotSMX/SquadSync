@@ -31,16 +31,16 @@
                 <div class="squad-card" data-name="{{ p.name }}">
                     <div class="squad-pill" style="background: {{ color }};">{{ p.name }}</div>
                     {% if session.final_time %}
-                        {% if p.token == participant.token %}
-                            <form action="{{ url_for('main.confirm', session_id=session.id, token=p.token) }}" method="POST" class="confirm-btns">
-                                <button class="btn-yes"   name="status" value="Yes">Yes</button>
-                                <button class="btn-maybe" name="status" value="Maybe">?</button>
-                                <button class="btn-no"    name="status" value="No">No</button>
-                            </form>
-                        {% endif %}
                         <span class="status-pill {% if status == 'Yes' %}s-yes{% elif status == 'Maybe' %}s-maybe{% elif status == 'No' %}s-no{% else %}s-none{% endif %}">
                             {{ status if status else 'No Response' }}
                         </span>
+                        {% if p.token == participant.token %}
+                            <div class="confirm-btns">
+                                <button class="btn-yes"   onclick="submitConfirm('{{ p.token }}', 'Yes')">Yes</button>
+                                <button class="btn-maybe" onclick="submitConfirm('{{ p.token }}', 'Maybe')">?</button>
+                                <button class="btn-no"    onclick="submitConfirm('{{ p.token }}', 'No')">No</button>
+                            </div>
+                        {% endif %}
                     {% endif %}
                 </div>
             {% endfor %}
@@ -207,7 +207,16 @@ window.squadToken = {{ (token or '')|tojson }};
 
 <script>window.rawgApiKey = {{ rawg_key|tojson }};</script>
 <script src="/static/js/game_covers.js" defer></script>
-
-<script src="/static/js/session_sse.js" defer></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="/static/js/session_ws.js" defer></script>
+<script>
+function submitConfirm(token, status) {
+    const fd = new FormData();
+    fd.append('status', status);
+    fetch("{{ url_for('main.confirm', session_id=session.id, token='TOKEN') }}".replace('TOKEN', token), {
+        method: 'POST', body: fd
+    });
+}
+</script>
 
 {% endblock %}

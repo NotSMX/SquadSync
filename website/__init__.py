@@ -7,6 +7,7 @@ from flask import Flask
 from flask_login import LoginManager
 from flask_mail import Mail
 from flask_sqlalchemy import SQLAlchemy
+from flask_socketio import SocketIO
 from sqlalchemy.pool import NullPool
 from dotenv import load_dotenv
 
@@ -15,7 +16,7 @@ load_dotenv()
 db = SQLAlchemy()
 login_manager = LoginManager()
 mail = Mail()
-
+socketio = SocketIO()
 
 def create_app():
     """Factory function to create and configure the Flask app."""
@@ -51,6 +52,7 @@ def create_app():
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = "main.login"
+    socketio.init_app(app, cors_allowed_origins="*")
 
     from website.models import User  # pylint: disable=import-outside-toplevel
     from website.views import main   # pylint: disable=import-outside-toplevel

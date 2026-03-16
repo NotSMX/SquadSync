@@ -13,3 +13,5 @@ authlib==1.6.5
 SQLAlchemy==2.0.44
 gevent==23.9.1
 greenlet==3.0.1
+flask-socketio==5.6.1
+gevent-websocket==0.10.1

@@ -1,28 +1,16 @@
-(function() {
+(function () {
     var sessionHash = window.squadScheduleHash;
     if (!sessionHash) return;
 
-    var lastHash = null;
-    var pollInterval = 3000;
-    var timer = null;
+    var socket = io();
 
-    function poll() {
-        fetch('/session/' + sessionHash + '/state')
-            .then(function(r) {
-                if (!r.ok) throw new Error('bad response');
-                return r.json();
-            })
-            .then(function(data) {
-                if (data.state_hash !== lastHash) {
-                    lastHash = data.state_hash;
-                    handleStateUpdate(data);
-                }
-            })
-            .catch(function() {})
-            .finally(function() {
-                timer = setTimeout(poll, pollInterval);
-            });
-    }
+    socket.on('connect', function () {
+        socket.emit('join', { session_hash: sessionHash });
+    });
+
+    socket.on('state_update', function (data) {
+        handleStateUpdate(data);
+    });
 
     function handleStateUpdate(data) {
         if (typeof window.rebuildCalendar === 'function') {
@@ -39,7 +27,7 @@
         if (!participants) return;
         var list = document.getElementById('squad-list');
         if (!list) return;
-        participants.forEach(function(name) {
+        participants.forEach(function (name) {
             if (!list.querySelector('[data-name="' + CSS.escape(name) + '"]')) {
                 var card = document.createElement('div');
                 card.className = 'squad-card';
@@ -55,26 +43,26 @@
 
     function updateGameTally(tally) {
         if (!tally) return;
-        var container = document.getElementById('game-tally-list');  // was 'game-tally'
+        var container = document.getElementById('game-tally-list');
         if (!container) return;
         var noVotes = document.getElementById('no-votes-msg');
 
         if (tally.length === 0) {
             if (noVotes) noVotes.style.display = '';
-            container.querySelectorAll('.game-vote-card').forEach(function(el) { el.remove(); });  // was 'vote-card'
+            container.querySelectorAll('.game-vote-card').forEach(function (el) { el.remove(); });
             return;
         }
         if (noVotes) noVotes.style.display = 'none';
 
         var existing = {};
-        container.querySelectorAll('.game-vote-card').forEach(function(el) {  // was 'vote-card'
+        container.querySelectorAll('.game-vote-card').forEach(function (el) {
             existing[el.dataset.game] = el;
         });
 
-        tally.forEach(function(item) {
+        tally.forEach(function (item) {
             var key = item.name;
             if (existing[key]) {
-                var countEl = existing[key].querySelector('.game-vote-count');  // was 'vote-count'
+                var countEl = existing[key].querySelector('.game-vote-count');
                 if (countEl) countEl.textContent = item.count + (item.count !== 1 ? ' votes' : ' vote');
                 delete existing[key];
             } else {
@@ -103,7 +91,7 @@
             }
         });
 
-        Object.values(existing).forEach(function(el) { el.remove(); });
+        Object.values(existing).forEach(function (el) { el.remove(); });
     }
 
     function updateFinalTime(finalTime) {
@@ -130,7 +118,7 @@
 
     function updateConfirmations(confirmations) {
         if (!confirmations) return;
-        Object.keys(confirmations).forEach(function(name) {
+        Object.keys(confirmations).forEach(function (name) {
             var status = confirmations[name];
             var card = document.querySelector('.squad-card[data-name="' + CSS.escape(name) + '"]');
             if (!card) return;
@@ -147,7 +135,4 @@
             pill.textContent = status || 'No Response';
         });
     }
-
-    // Start polling
-    timer = setTimeout(poll, 500); // first poll quickly
 })();

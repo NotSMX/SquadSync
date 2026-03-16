@@ -10,13 +10,14 @@ Create Session → Join → Submit Availability → Auto Pick → Confirm
 
 import json
 from flask import has_request_context
+from flask_socketio import join_room
 from datetime import datetime
 
 from flask import Blueprint, current_app, render_template, redirect, url_for, request, flash, jsonify
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from website import db
+from website import db, socketio
 from website.models import Confirmation, Participant, Session, Availability, GameVote
 from website.utils import notify_final_time, notify_personal_link
 
@@ -24,6 +25,9 @@ from gevent import spawn
 
 main = Blueprint("main", __name__)
 
+@socketio.on("join")
+def on_join(data):
+    join_room(data["session_hash"])
 
 @main.route("/")
 def index():
@@ -274,6 +278,30 @@ def _build_game_tally(game_session, participant):
     game_tally = sorted(tally_by_key.values(), key=lambda x: -x[1])
     return game_tally, my_game_vote
 
+def _emit_state(session_hash):
+    """Broadcast current session state to all clients in the room."""
+    game_session = Session.query.filter_by(hash_id=session_hash).first()
+    if not game_session:
+        return
+    _, grouped_json = _build_grouped_json(game_session)
+    game_tally, _ = _build_game_tally(game_session, None)
+    tally_out = [{"name": g[0], "count": g[1]} for g in game_tally]
+
+    confs = Confirmation.query.filter_by(session_id=game_session.id).all()
+    conf_map = {}
+    for c in confs:
+        p = next((x for x in game_session.participants if x.id == c.participant_id), None)
+        if p:
+            conf_map[p.name] = c.status
+
+    socketio.emit("state_update", {
+        "availability": grouped_json,
+        "game_tally": tally_out,
+        "chosen_game": game_session.chosen_game,
+        "final_time": game_session.final_time.isoformat() if game_session.final_time else None,
+        "confirmations": conf_map,
+        "participants": [p.name for p in game_session.participants],
+    }, room=session_hash)
 
 @main.route('/session/<session_hash>')
 def view_session(session_hash):
@@ -404,6 +432,7 @@ def auto_pick(session_hash):
         "success"
     )
     _notify_and_flash(session_obj)
+    _emit_state(session_hash)
     return redirect(url_for(
         "main.view_session", session_hash=session_obj.hash_id, token=participant.token
     ))
@@ -423,10 +452,10 @@ def manual_pick(session_hash):
     session_obj.final_time = datetime.fromisoformat(manual_time_str)
     db.session.commit()
     _notify_and_flash(session_obj)
+    _emit_state(session_hash)
     return redirect(url_for(
         "main.view_session", session_hash=session_obj.hash_id, token=participant.token
     ))
-
 
 @main.route("/confirm/<session_id>/<token>", methods=["POST"])
 def confirm(session_id, token):
@@ -449,6 +478,12 @@ def confirm(session_id, token):
         confirmation.status = status
 
     db.session.commit()
+    _emit_state(participant.session.hash_id)
+
+    # Return JSON for fetch requests, redirect for normal form posts
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or \
+       request.accept_mimetypes.accept_json:
+        return jsonify({"ok": True})
     return redirect(url_for(
         "main.view_session",
         session_hash=participant.session.hash_id, token=token
@@ -484,6 +519,7 @@ def join_and_vote(session_hash):
     db.session.add(vote)
     db.session.commit()
     flash("Thanks! Your vote was added.", "success")
+    _emit_state(session_hash)
     return redirect(url_for(
         "main.view_session", session_hash=session_hash, token=participant.token
     ))
@@ -518,6 +554,7 @@ def vote_game(session_hash):
         ))
     db.session.commit()
     flash("Vote saved.", "success")
+    _emit_state(session_hash)
     return redirect(url_for(
         "main.view_session", session_hash=session_hash, token=participant_token
     ))
@@ -544,6 +581,7 @@ def add_availability_from_calendar(session_hash):
         ))
 
     def ok_redirect():
+        _emit_state(session_hash)
         if is_xhr:
             return {"ok": True}
         flash("Availability added.", "success")
@@ -594,6 +632,7 @@ def set_game(session_hash):
     game_session.chosen_game = game_name
     db.session.commit()
     flash("Game set." if game_name else "Game cleared.", "success")
+    _emit_state(session_hash)
     return redirect(url_for(
         "main.view_session", session_hash=session_hash, token=participant_token
     ))
@@ -643,7 +682,7 @@ def remove_availability_from_calendar(session_hash):
 
     db.session.delete(block)
     db.session.commit()
-
+    _emit_state(session_hash)
     if is_xhr:
         return {"ok": True}
 

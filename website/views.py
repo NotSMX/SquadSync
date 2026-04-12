@@ -492,17 +492,15 @@ def confirm(session_id, token):
 
 @main.route("/session/<session_hash>/join_and_vote", methods=["POST"])
 def join_and_vote(session_hash):
-    """Join a session and vote for a game in one step (for public link visitors)."""
+    """Join a session, save temp availability, and vote in one step."""
     game_session = Session.query.filter_by(hash_id=session_hash).first_or_404()
     name = (request.form.get("name") or "").strip()
     email = (request.form.get("email") or "").strip()
     game_name = (request.form.get("game_name") or "").strip()
+    temp_availability_raw = request.form.get("temp_availability", "[]")
 
     if not name:
         flash("Please enter your name.", "warning")
-        return redirect(url_for("main.view_session", session_hash=session_hash))
-    if not game_name:
-        flash("Please enter your preferred game.", "warning")
         return redirect(url_for("main.view_session", session_hash=session_hash))
 
     participant = Participant(name=name, email=email or None, session_id=game_session.id)
@@ -513,12 +511,39 @@ def join_and_vote(session_hash):
         game_session.host_id = participant.id
         db.session.commit()
 
-    vote = GameVote(
-        session_id=game_session.id, participant_id=participant.id, game_name=game_name
-    )
-    db.session.add(vote)
+    # Process Temp Availability
+    try:
+        temp_avail = json.loads(temp_availability_raw)
+        for block in temp_avail:
+            start_str = block.get("start", "").replace("Z", "+00:00")
+            end_str = block.get("end", "").replace("Z", "+00:00")
+            try:
+                start_dt = strip_tz(datetime.fromisoformat(start_str))
+                end_dt = strip_tz(datetime.fromisoformat(end_str))
+                if start_dt < end_dt:
+                    db.session.add(Availability(
+                        session_id=game_session.id,
+                        participant_id=participant.id,
+                        start_time=start_dt,
+                        end_time=end_dt
+                    ))
+            except ValueError:
+                continue
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    if game_name:
+        vote = GameVote(
+            session_id=game_session.id, participant_id=participant.id, game_name=game_name
+        )
+        db.session.add(vote)
+        
     db.session.commit()
-    flash("Thanks! Your vote was added.", "success")
+    
+    # Notify user with their personal link
+    spawn(notify_personal_link, participant, game_session)
+    
+    flash("Thanks for joining! Your availability has been saved.", "success")
     _emit_state(session_hash)
     return redirect(url_for(
         "main.view_session", session_hash=session_hash, token=participant.token

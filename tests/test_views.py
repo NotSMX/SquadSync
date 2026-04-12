@@ -1455,3 +1455,117 @@ def test_cleanup_db_route(client, app):
     with app.app_context():
         for sid in [21, 22, 23, 24, 25, 26]:
             assert Session.query.get(sid) is None
+
+# ── join_and_vote: temp_availability branch coverage ──────────────────────────
+
+def test_join_and_vote_valid_temp_availability(client, sample_session, app):
+    """Joining with valid temp_availability should save the blocks."""
+    start = datetime.now()
+    end = start + timedelta(hours=1)
+    # Using 'Z' to explicitly test the .replace("Z", "+00:00") string logic
+    temp_avail = f'[{{"start": "{start.isoformat()}Z", "end": "{end.isoformat()}Z"}}]'
+    
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/join_and_vote",
+        data={
+            "name": "Temp User",
+            "email": "temp@test.com",
+            "game_name": "Halo",
+            "temp_availability": temp_avail
+        },
+        follow_redirects=True
+    )
+    assert res.status_code == 200
+    with app.app_context():
+        p = Participant.query.filter_by(email="temp@test.com").first()
+        assert p is not None
+        assert len(p.availabilities) == 1
+
+
+def test_join_and_vote_invalid_json_temp_availability(client, sample_session, app):
+    """Invalid JSON in temp_availability should be caught and ignored safely."""
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/join_and_vote",
+        data={
+            "name": "Bad JSON User",
+            "email": "bad@test.com",
+            "game_name": "Halo",
+            "temp_availability": "not-valid-json-[]"
+        },
+        follow_redirects=True
+    )
+    assert res.status_code == 200
+    with app.app_context():
+        p = Participant.query.filter_by(email="bad@test.com").first()
+        assert p is not None
+        assert len(p.availabilities) == 0
+
+
+def test_join_and_vote_invalid_date_temp_availability(client, sample_session, app):
+    """Invalid date strings in temp_availability should hit ValueError and continue."""
+    start = datetime.now()
+    end = start + timedelta(hours=1)
+    # Provide one bad block and one good block to ensure 'continue' allows the good one to save
+    temp_avail = f'[ \
+        {{"start": "bad-date", "end": "worse-date"}}, \
+        {{"start": "{start.isoformat()}", "end": "{end.isoformat()}"}} \
+    ]'
+    
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/join_and_vote",
+        data={
+            "name": "Bad Date User",
+            "email": "baddate@test.com",
+            "game_name": "Halo",
+            "temp_availability": temp_avail
+        },
+        follow_redirects=True
+    )
+    assert res.status_code == 200
+    with app.app_context():
+        p = Participant.query.filter_by(email="baddate@test.com").first()
+        assert p is not None
+        # Only the valid block should be saved
+        assert len(p.availabilities) == 1
+
+
+def test_join_and_vote_end_before_start_temp_availability(client, sample_session, app):
+    """Temp availability where start >= end should be skipped."""
+    start = datetime.now()
+    end = start - timedelta(hours=1) # End before start
+    temp_avail = f'[{{"start": "{start.isoformat()}", "end": "{end.isoformat()}"}}]'
+    
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/join_and_vote",
+        data={
+            "name": "Time Traveler",
+            "email": "time@test.com",
+            "game_name": "Halo",
+            "temp_availability": temp_avail
+        },
+        follow_redirects=True
+    )
+    assert res.status_code == 200
+    with app.app_context():
+        p = Participant.query.filter_by(email="time@test.com").first()
+        assert p is not None
+        assert len(p.availabilities) == 0
+
+
+def test_join_and_vote_type_error_temp_availability(client, sample_session, app):
+    """Temp availability that parses as an integer should hit TypeError on loop."""
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/join_and_vote",
+        data={
+            "name": "Int User",
+            "email": "int@test.com",
+            "game_name": "Halo",
+            "temp_availability": "42"  # Parses as an int, which is not iterable
+        },
+        follow_redirects=True
+    )
+    assert res.status_code == 200
+    with app.app_context():
+        p = Participant.query.filter_by(email="int@test.com").first()
+        assert p is not None
+        assert len(p.availabilities) == 0

@@ -4,7 +4,6 @@
 
 <div class="panel mb-4 p-4">
 
-    <!-- HEADER -->
     <div class="session-header">
         {% if is_host %}<div><span class="host-badge">Host</span></div>{% endif %}
         <h1 class="session-title">{{ session.title }}</h1>
@@ -20,7 +19,6 @@
         </div>
     {% endif %}
 
-    <!-- SQUAD + CONFIRMATION -->
     <div class="mb-4 text-center">
         <h4 class="mb-3">Squad</h4>
         <div class="squad-grid" id="squad-list">
@@ -47,7 +45,6 @@
         </div>
     </div>
 
-    <!-- SCHEDULE (first) -->
     <div class="mt-4 p-3 border rounded">
         <h4 class="mb-3 text-center">Squad Schedule</h4>
         {% if token %}
@@ -55,11 +52,19 @@
         <div class="text-center mb-2">
             <button id="clear-availability" class="btn btn-outline-danger btn-sm">✕ Clear my availability</button>
         </div>
+        {% else %}
+        <p class="small mb-2 text-center" style="color: #aaa;">Drag to add your temporary availability. <strong>Save it by joining below!</strong></p>
         {% endif %}
+        
         <div id="group-calendar" style="min-height: 450px; width: 100%;"></div>
+
+        {% if not token %}
+        <div class="alert alert-info mt-3 text-center mb-0 border-primary" style="background-color: rgba(13, 110, 253, 0.1); color: #8bb9fe;">
+            <strong>Happy with your times?</strong> Scroll down to join the session and lock them in!
+        </div>
+        {% endif %}
     </div>
 
-    <!-- WHAT TO PLAY (second) -->
     <div class="mb-4 mt-2 mx-auto" style="max-width: 600px;">
     <div class="p-3 border rounded" style="background-color: #454545; border-color: #555;">
         <h4 class="mb-1 fw-bold" style="color: #eee;">What to play?</h4>
@@ -95,14 +100,7 @@
                 }
                 </script>
             {% else %}
-                <form action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" class="mb-3">
-                    <div class="d-flex flex-column gap-2 text-start">
-                        <input type="text" name="name" placeholder="Your name" required class="form-control" style="color: #333;">
-                        <input type="email" name="email" placeholder="Your email" required class="form-control" style="color: #333;">
-                        <input type="text" name="game_name" placeholder="Preferred game (e.g. Valorant, Among Us)" required class="form-control" style="color: #333;">
-                        <button type="submit" class="btn btn-primary">Join & vote</button>
-                    </div>
-                </form>
+                <p class="small text-center" style="color: #aaa;">Join the session below to add your game vote!</p>
             {% endif %}
             {% if game_tally %}
                 <p class="mb-2 small" style="color: #ccc;">Votes:</p>
@@ -131,7 +129,48 @@
     </div>
     </div>
 
-    <!-- INVITE LINKS -->
+    {% if not token %}
+    <div class="mb-5 mx-auto" style="max-width: 600px;">
+        <div class="p-4 border rounded shadow" style="background-color: #222; border-color: #444;">
+            <h3 class="mb-1 fw-bold text-center text-white">Want to join?</h3>
+            <p class="text-center small mb-4" style="color: #bbb;">Join the session to lock in your availability!</p>
+
+            <form action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" id="join-form">
+                <input type="hidden" name="temp_availability" id="temp-availability-input" value="[]">
+                
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-white small mb-1">Name</label>
+                        <input type="text" name="name" placeholder="Your name" required class="form-control" style="background: #333; color: white; border: 1px solid #555;">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-white small mb-1">Email</label>
+                        <input type="email" name="email" placeholder="To receive your link" required class="form-control" style="background: #333; color: white; border: 1px solid #555;">
+                    </div>
+                </div>
+
+                <div class="mt-4 p-3 rounded" style="background-color: #2a2a2a; border: 1px dashed #666;">
+                    <label class="form-label text-white small fw-bold mb-1">Game Suggestion (Optional)</label>
+                    <p class="small text-muted mb-2" style="font-size: 0.8rem;">What do you want to play?</p>
+                    <input type="text" name="game_name" placeholder="e.g. Valorant, Among Us" class="form-control" style="background: #333; color: white; border: 1px solid #555;">
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-bold mt-4" style="font-size: 1.1rem;">
+                    Join Session & Save Times
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+    document.getElementById('join-form').addEventListener('submit', function() {
+        if (window.tempBlocks && window.tempBlocks.length > 0) {
+            document.getElementById('temp-availability-input').value = JSON.stringify(window.tempBlocks);
+        }
+    });
+    </script>
+    {% endif %}
+
     {% if token %}
     <div class="mt-4 p-3 border rounded">
         <h4 class="mb-3">Invite Links</h4>
@@ -169,7 +208,6 @@
     }
     </script>
 
-    <!-- HOST CONTROLS -->
     {% if is_host %}
     <div class="mt-4 p-4 border rounded text-center" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 2px solid rgba(255,255,255,0.15); box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
         <h4 class="mb-2 fw-bold text-white" style="font-size: 1.5rem; letter-spacing: 0.05em;">HOST CONTROLS</h4>

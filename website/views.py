@@ -102,6 +102,7 @@ def _ensure_game_election_schema():
             ("availability", "session_id", "INTEGER"),
             ("availability", "start_time", "DATETIME"),
             ("availability", "end_time", "DATETIME"),
+            ("experiment_result", "link_token", "VARCHAR(64)"),
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))
@@ -1066,6 +1067,306 @@ def import_db():
 
     flash(f"Imported {len(data.get('sessions', []))} sessions and {len(data.get('participants', []))} participants.", "success")
     return redirect(url_for("main.dashboard"))
+
+# ── EXPERIMENT ROUTES ────────────────────────────────────────────────────────
+
+def _get_or_create_experiment_session():
+    """Return the single ExperimentSession template, creating it if needed."""
+    from website.models import ExperimentSession  # noqa: PLC0415
+    import json as _json  # noqa: PLC0415
+    from datetime import timezone, timedelta  # noqa: PLC0415
+    es = ExperimentSession.query.first()
+    if not es:
+        now = datetime.now(timezone.utc).replace(hour=20, minute=0, second=0, microsecond=0)
+        blocks = []
+        for day_offset in [1, 2, 4, 5]:
+            day = now + timedelta(days=day_offset)
+            blocks.append({"start": day.replace(hour=18).isoformat(), "end": day.replace(hour=21).isoformat()})
+            blocks.append({"start": day.replace(hour=20).isoformat(), "end": day.replace(hour=22).isoformat()})
+        es = ExperimentSession(
+            title="Friday Night Games",
+            availability_json=_json.dumps(blocks),
+            chosen_game=None,
+        )
+        db.session.add(es)
+        db.session.commit()
+    return es
+
+
+@main.route("/experiment")
+def experiment_session():
+    """Serve the controlled experiment page. No real session data used."""
+    from website.models import ExperimentSession, ExperimentResult  # noqa: PLC0415
+    import json as _json  # noqa: PLC0415
+
+    link_token = request.args.get("link_token", "").strip()
+
+    # Validate link token
+    if not link_token:
+        return render_template("experiment_invalid.html",
+                               reason="missing"), 400
+
+    import hmac as _hmac, hashlib as _hashlib  # noqa: PLC0415
+    from website.models import ExperimentResult  # noqa: PLC0415
+
+    # Ensure link_token column exists
+    try:
+        db.session.execute(text("ALTER TABLE experiment_result ADD COLUMN link_token VARCHAR(64)"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    # Validate token signature: format is "CONDITION.nonce.sig"
+    parts = link_token.split(".")
+    if len(parts) != 3:
+        return render_template("experiment_invalid.html", reason="invalid"), 404
+    token_condition, nonce, sig = parts
+    secret = current_app.config.get("SECRET_KEY", "dev")
+    expected = _hmac.new(secret.encode(), f"{token_condition}:{nonce}".encode(), _hashlib.sha256).hexdigest()[:16]
+    if not _hmac.compare_digest(sig, expected):
+        return render_template("experiment_invalid.html", reason="invalid"), 404
+
+    condition = token_condition.upper()
+    if condition not in ("A", "B"):
+        return render_template("experiment_invalid.html", reason="invalid"), 404
+
+    # Check if already used
+    row = db.session.execute(
+        text("SELECT id, joined FROM experiment_result WHERE link_token = :token LIMIT 1"),
+        {"token": link_token}
+    ).fetchone()
+
+    if row and row[1]:  # joined=True — link already consumed
+        return render_template("experiment_invalid.html", reason="used"), 410
+
+    es = _get_or_create_experiment_session()
+
+    if not row:
+        # First time this link has been opened — create the pending result row now
+        from datetime import timezone as _tz  # noqa: PLC0415
+        now = datetime.now(_tz.utc).isoformat()
+        db.session.execute(
+            text("INSERT INTO experiment_result (condition, experiment_session_id, participant_id, joined, link_token, time_to_join_ms, created_at) VALUES (:cond, :es_id, NULL, 0, :token, NULL, :now)"),
+            {"cond": condition, "es_id": es.id, "token": link_token, "now": now}
+        )
+        db.session.commit()
+
+    try:
+        raw_blocks = _json.loads(es.availability_json)
+    except (ValueError, TypeError):
+        raw_blocks = []
+
+    grouped_json = {
+        "Alex":   [{"start": b["start"], "end": b["end"]} for b in raw_blocks[:3]],
+        "Jordan": [{"start": b["start"], "end": b["end"]} for b in raw_blocks[3:]],
+    }
+    fake_tally = [["Valorant", 2], ["Minecraft", 1]]
+
+    return render_template(
+        "experiment_session.html",
+        experiment_session=es,
+        condition=condition,
+        link_token=link_token,
+        grouped_json=grouped_json,
+        grouped_availability=grouped_json,
+        game_tally=fake_tally,
+        confirmations={},
+        rawg_key=current_app.config.get("RAWG_API_KEY", ""),
+    )
+
+
+@main.route("/experiment/join", methods=["POST"])
+def experiment_join():
+    """Record a join event. Creates participant in __experiment__ session."""
+    from website.models import ExperimentSession, ExperimentResult  # noqa: PLC0415
+
+    es = _get_or_create_experiment_session()
+    condition = request.form.get("condition", "A").upper()
+    time_to_join_ms = request.form.get("time_to_join_ms", type=int)
+    name = (request.form.get("name") or "").strip()
+    email = (request.form.get("email") or "").strip()
+    game_name = (request.form.get("game_name") or "").strip()
+    temp_availability_raw = request.form.get("temp_availability", "[]")
+
+    if not name:
+        flash("Please enter your name.", "warning")
+        return redirect(url_for("main.experiment_session", condition=condition))
+
+    exp_real_session = Session.query.filter_by(title="__experiment__").first()
+    if not exp_real_session:
+        exp_real_session = Session(title="__experiment__", is_public=False)
+        db.session.add(exp_real_session)
+        db.session.commit()
+
+    participant = Participant(name=name, email=email or None, session_id=exp_real_session.id)
+    db.session.add(participant)
+    db.session.flush()
+
+    try:
+        temp_avail = json.loads(temp_availability_raw)
+        for block in temp_avail:
+            start_str = block.get("start", "").replace("Z", "+00:00")
+            end_str = block.get("end", "").replace("Z", "+00:00")
+            try:
+                start_dt = strip_tz(datetime.fromisoformat(start_str))
+                end_dt = strip_tz(datetime.fromisoformat(end_str))
+                if start_dt < end_dt:
+                    db.session.add(Availability(
+                        session_id=exp_real_session.id,
+                        participant_id=participant.id,
+                        start_time=start_dt,
+                        end_time=end_dt
+                    ))
+            except ValueError:
+                continue
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    if game_name:
+        db.session.add(GameVote(
+            session_id=exp_real_session.id,
+            participant_id=participant.id,
+            game_name=game_name
+        ))
+
+    link_token = request.form.get("link_token", "").strip()
+
+    if link_token:
+        result_row = db.session.execute(
+            text("SELECT id FROM experiment_result WHERE link_token = :token AND joined = 0 LIMIT 1"),
+            {"token": link_token}
+        ).fetchone()
+        if result_row:
+            db.session.execute(
+                text("UPDATE experiment_result SET participant_id=:pid, joined=1, time_to_join_ms=:ms WHERE id=:rid"),
+                {"pid": participant.id, "ms": time_to_join_ms, "rid": result_row[0]}
+            )
+    else:
+        db.session.add(ExperimentResult(
+            condition=condition,
+            experiment_session_id=es.id,
+            participant_id=participant.id,
+            joined=True,
+            time_to_join_ms=time_to_join_ms,
+        ))
+    db.session.commit()
+
+    flash("Thanks! Your response has been recorded.", "success")
+    return redirect(url_for("main.index"))
+
+
+@main.route("/experiment/no_join", methods=["POST"])
+def experiment_no_join():
+    """Record an abandoned (non-join) event via sendBeacon."""
+    from website.models import ExperimentSession, ExperimentResult  # noqa: PLC0415
+    link_token = request.form.get("link_token", "").strip()
+    elapsed = request.form.get("time_to_join_ms", type=int)
+
+    if link_token:
+        db.session.execute(
+            text("UPDATE experiment_result SET time_to_join_ms=:ms WHERE link_token=:token AND joined=0"),
+            {"ms": elapsed, "token": link_token}
+        )
+        db.session.commit()
+    else:
+        # Fallback: no token
+        es = ExperimentSession.query.first()
+        db.session.add(ExperimentResult(
+            condition=request.form.get("condition", "A").upper(),
+            experiment_session_id=es.id if es else None,
+            participant_id=None,
+            joined=False,
+            time_to_join_ms=elapsed,
+        ))
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
+@main.route("/experiment/export")
+def experiment_export():
+    """Export experiment results as CSV or JSON."""
+    from website.models import ExperimentResult  # noqa: PLC0415
+    import csv, io  # noqa: PLC0415
+    from flask import Response  # noqa: PLC0415
+
+    fmt = request.args.get("format", "csv").lower()
+    results = ExperimentResult.query.order_by(ExperimentResult.created_at).all()
+
+    if fmt == "json":
+        data = [{"id": r.id, "condition": r.condition, "participant_id": r.participant_id,
+                 "joined": r.joined, "time_to_join_ms": r.time_to_join_ms,
+                 "created_at": r.created_at.isoformat() if r.created_at else None}
+                for r in results]
+        return Response(json.dumps(data, indent=2), mimetype="application/json",
+                        headers={"Content-Disposition": "attachment; filename=experiment_results.json"})
+
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["id", "condition", "participant_id", "joined", "time_to_join_ms", "created_at"])
+    for r in results:
+        w.writerow([r.id, r.condition, r.participant_id, r.joined, r.time_to_join_ms,
+                    r.created_at.isoformat() if r.created_at else ""])
+    return Response(out.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=experiment_results.csv"})
+
+
+@main.route("/experiment/reset_participants", methods=["POST"])
+def experiment_reset_participants():
+    """Delete participants from the experiment session only. Keeps result rows."""
+    exp_session = Session.query.filter_by(title="__experiment__").first()
+    if exp_session:
+        GameVote.query.filter_by(session_id=exp_session.id).delete()
+        Availability.query.filter_by(session_id=exp_session.id).delete()
+        Participant.query.filter_by(session_id=exp_session.id).delete()
+        db.session.commit()
+    flash("Experiment participants cleared — results kept.", "success")
+    return redirect(url_for("main.dashboard"))
+
+
+@main.route("/experiment/reset_all", methods=["POST"])
+def experiment_reset_all():
+    """Full reset: delete participants AND all result rows."""
+    from website.models import ExperimentResult  # noqa: PLC0415
+    exp_session = Session.query.filter_by(title="__experiment__").first()
+    if exp_session:
+        GameVote.query.filter_by(session_id=exp_session.id).delete()
+        Availability.query.filter_by(session_id=exp_session.id).delete()
+        Participant.query.filter_by(session_id=exp_session.id).delete()
+    deleted = ExperimentResult.query.delete()
+    db.session.commit()
+    flash(f"Full reset — {deleted} result(s) deleted.", "success")
+    return redirect(url_for("main.dashboard"))
+
+
+@main.route("/experiment/results")
+def experiment_results():
+    """JSON endpoint for dashboard live panel."""
+    from website.models import ExperimentResult  # noqa: PLC0415
+    results = ExperimentResult.query.order_by(ExperimentResult.created_at).all()
+    return jsonify([{"id": r.id, "condition": r.condition, "joined": r.joined,
+                     "time_to_join_ms": r.time_to_join_ms,
+                     "created_at": r.created_at.isoformat() if r.created_at else None}
+                    for r in results])
+
+
+@main.route("/experiment/generate_link", methods=["POST"])
+def experiment_generate_link():
+    """Return a signed token for a single-use experiment link. No DB write yet —
+    the result row is created when the participant actually opens the link."""
+    import secrets as _secrets  # noqa: PLC0415
+    import hmac as _hmac, hashlib as _hashlib  # noqa: PLC0415
+
+    condition = (request.json or request.form).get("condition", "A").upper()
+    if condition not in ("A", "B"):
+        condition = "A"
+
+    nonce = _secrets.token_urlsafe(18)
+    secret = current_app.config.get("SECRET_KEY", "dev")
+    sig = _hmac.new(secret.encode(), f"{condition}:{nonce}".encode(), _hashlib.sha256).hexdigest()[:16]
+    link_token = f"{condition}.{nonce}.{sig}"
+
+    return jsonify({"link_token": link_token, "condition": condition})
+
 
 @main.route("/fix-sequences")
 def fix_sequences():

@@ -47,6 +47,7 @@ def _collect_availability_keys():
 def _collect_activated_keys():
     activated_keys = set()
 
+    # Hosts: created at least one session
     hosts = {
         r[0] for r in Session.query.with_entities(Session.host_id).distinct().all()
         if r[0] is not None
@@ -56,6 +57,19 @@ def _collect_activated_keys():
         if p:
             activated_keys.add(_unique_key(p))
 
+    # Non-host participants: joined a session (any session except __experiment__)
+    exp_session_ids = {
+        s.id for s in Session.query.filter_by(title="__experiment__").all()
+    }
+    for p in Participant.query.all():
+        if p.session_id in exp_session_ids:
+            continue
+        # Any participant who is not the host is someone who joined
+        session = db.session.get(Session, p.session_id)
+        if session and session.host_id != p.id:
+            activated_keys.add(_unique_key(p))
+
+    # Confirmations: RSVP'd to a final time
     confirmations = Confirmation.query.all()
     for c in confirmations:
         p = db.session.get(Participant, c.participant_id)

@@ -149,7 +149,7 @@ def create_session():
         )
         db.session.add(host_participant)
         db.session.commit()
-        spawn(notify_personal_link, host_participant, new_session)
+        spawn(notify_personal_link, current_app._get_current_object(), host_participant, new_session)
 
         new_session.host_id = host_participant.id
         db.session.commit()
@@ -178,7 +178,7 @@ def join_session(session_id):
         game_session.host_id = participant.id
         db.session.commit()
 
-    spawn(notify_personal_link, participant, game_session)
+    spawn(notify_personal_link, current_app._get_current_object(), participant, game_session)
 
     return redirect(url_for(
         "main.view_session",
@@ -541,7 +541,7 @@ def join_and_vote(session_hash):
     db.session.commit()
     
     # Notify user with their personal link
-    spawn(notify_personal_link, participant, game_session)
+    spawn(notify_personal_link, current_app._get_current_object(), participant, game_session)
     
     flash("Thanks for joining! Your availability has been saved.", "success")
     _emit_state(session_hash)

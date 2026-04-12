@@ -48,39 +48,39 @@ def notify_final_time(session):
 
     return sent_count, failed
 
-def notify_personal_link(participant, session):
+def notify_personal_link(app, participant, session):
     """Send a personal link email to a participant when they join or create a session."""
-    if not (
-        current_app.config.get("MAIL_USERNAME")
-        and current_app.config.get("MAIL_PASSWORD")
-    ):
-        return False, None
 
-    if not (participant.email and participant.email.strip()):
-        return False, None
+    with app.app_context(), app.test_request_context():
 
-    session_url = url_for(
-        "main.view_session",
-        session_hash=session.hash_id,
-        token=participant.token,
-        _external=True,
-    )
+        if not (
+            app.config.get("MAIL_USERNAME")
+            and app.config.get("MAIL_PASSWORD")
+        ):
+            return False, None
 
-    msg = Message(
-        subject=f"Your personal link for {session.title}",
-        recipients=[participant.email.strip()],
-        body=(
-            f"Hi {participant.name},\n\n"
-            f"Here is your personal link for '{session.title}'.\n"
-            f"Use it to view the session, update your availability, and confirm your attendance:\n\n"
-            f"{session_url}\n\n"
-            f"Save this link — it's the only way to access your session without logging in.\n\n"
-            f"Thanks!"
-        ),
-    )
+        if not (participant.email and participant.email.strip()):
+            return False, None
 
-    try:
-        mail.send(msg)
-        return True, None
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        return False, str(e)
+        session_url = url_for(
+            "main.view_session",
+            session_hash=session.hash_id,
+            token=participant.token,
+            _external=True,
+        )
+
+        msg = Message(
+            subject=f"Your personal link for {session.title}",
+            recipients=[participant.email.strip()],
+            body=(
+                f"Hi {participant.name},\n\n"
+                f"Here is your personal link for '{session.title}'.\n"
+                f"{session_url}\n\nThanks!"
+            ),
+        )
+
+        try:
+            mail.send(msg)
+            return True, None
+        except Exception as e:
+            return False, str(e)

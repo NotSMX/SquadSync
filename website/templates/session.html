@@ -1,26 +1,33 @@
 {% extends "base.html" %}
 {% block content %}
 
-
 <div class="panel mb-4 p-4">
 
+    {# ── SESSION HEADER ───────────────────────────────────────────────────── #}
     <div class="session-header">
         {% if is_host %}<div><span class="host-badge">Host</span></div>{% endif %}
         <h1 class="session-title">{{ session.title }}</h1>
     </div>
 
-    <span id="final-time-marker" data-final-time="{{ session.final_time.isoformat() if session.final_time else '' }}" style="display:none;"></span>
-    <span id="chosen-game-marker" data-chosen-game-name="{{ session.chosen_game or '' }}" style="display:none;"></span>
+    {# Hidden state markers for live update diffing #}
+    <span id="final-time-marker"
+          data-final-time="{{ session.final_time.isoformat() if session.final_time else '' }}"
+          style="display:none;"></span>
+    <span id="chosen-game-marker"
+          data-chosen-game-name="{{ session.chosen_game or '' }}"
+          style="display:none;"></span>
 
+    {# ── FINAL TIME BANNER ────────────────────────────────────────────────── #}
     {% if session.final_time %}
-        <div class="final-time-banner">
-            <p class="final-time-label">📅 Session Locked</p>
-            <p class="final-time-value">{{ session.final_time.strftime("%A, %B %d, %Y at %I:%M %p") }}</p>
-        </div>
+    <div class="final-time-banner">
+        <p class="final-time-label">📅 Session Locked</p>
+        <p class="final-time-value">{{ session.final_time.strftime("%A, %B %d, %Y at %I:%M %p") }}</p>
+    </div>
     {% endif %}
 
-    <div class="mb-4 text-center">
-        <h4 class="mb-3">Squad</h4>
+    {# ── SQUAD ────────────────────────────────────────────────────────────── #}
+    <div class="section-card mb-4">
+        <h4 class="section-title">Squad</h4>
         <div class="squad-grid" id="squad-list">
             {% set colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"] %}
             {% for p, blocks in grouped_availability.items() %}
@@ -33,11 +40,11 @@
                             {{ status if status else 'No Response' }}
                         </span>
                         {% if p.token == participant.token %}
-                            <div class="confirm-btns">
-                                <button class="btn-yes"   onclick="submitConfirm('{{ p.token }}', 'Yes')">Yes</button>
-                                <button class="btn-maybe" onclick="submitConfirm('{{ p.token }}', 'Maybe')">?</button>
-                                <button class="btn-no"    onclick="submitConfirm('{{ p.token }}', 'No')">No</button>
-                            </div>
+                        <div class="confirm-btns">
+                            <button class="btn-yes"   onclick="submitConfirm('{{ p.token }}', 'Yes')">Yes</button>
+                            <button class="btn-maybe" onclick="submitConfirm('{{ p.token }}', 'Maybe')">Maybe</button>
+                            <button class="btn-no"    onclick="submitConfirm('{{ p.token }}', 'No')">No</button>
+                        </div>
                         {% endif %}
                     {% endif %}
                 </div>
@@ -45,125 +52,161 @@
         </div>
     </div>
 
-    <div class="mt-4 p-3 border rounded">
-        <h4 class="mb-3 text-center">Squad Schedule</h4>
+    {# ── AVAILABILITY CALENDAR ────────────────────────────────────────────── #}
+    <div class="section-card mb-4">
+        <h4 class="section-title">Squad Schedule</h4>
+
         {% if token %}
-        <p class="small mb-1 text-center" style="color: #aaa;">Drag to add your availability. Click a block to remove it.</p>
-        <div class="text-center mb-2">
-            <button id="clear-availability" class="btn btn-outline-danger btn-sm">✕ Clear my availability</button>
-        </div>
+            <p class="section-hint">Drag to add your availability. Click a block to remove it.</p>
+            <div class="text-center mb-3">
+                <button id="clear-availability" class="btn btn-outline-danger btn-sm">✕ Clear my availability</button>
+            </div>
         {% else %}
-        <p class="small mb-2 text-center" style="color: #aaa;">Drag to add your temporary availability. <strong>Save it by joining below!</strong></p>
+            <p class="section-hint">Drag to mark your availability — you can save it by joining below.</p>
         {% endif %}
-        
+
         <div id="group-calendar" style="min-height: 450px; width: 100%;"></div>
 
         {% if not token %}
-        <div class="alert alert-info mt-3 text-center mb-0 border-primary" style="background-color: rgba(13, 110, 253, 0.1); color: #8bb9fe;">
-            <strong>Happy with your times?</strong> Scroll down to join the session and lock them in!
+        <div class="join-nudge mt-3">
+            <span>Happy with your times?</span>
+            <a href="#join-section" class="join-nudge-link">Join the session to lock them in ↓</a>
         </div>
         {% endif %}
     </div>
 
-    <div class="mb-4 mt-2 mx-auto" style="max-width: 600px;">
-    <div class="p-3 border rounded" style="background-color: #454545; border-color: #555;">
-        <h4 class="mb-1 fw-bold" style="color: #eee;">What to play?</h4>
-        <p class="small mb-2" style="color: #ccc;">Add your preferred game. The host will choose based on highest votes.</p>
+    {# ── WHAT TO PLAY ─────────────────────────────────────────────────────── #}
+    <div class="section-card mb-4">
         {% if session.chosen_game %}
-            <p class="mb-0 fw-bold" style="color: #fff;">We're playing: <strong>{{ session.chosen_game }}</strong></p>
-            <div id="chosen-game-img" class="mt-2"></div>
-            {% if is_host %}
-                <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-2">
-                    <input type="hidden" name="game_name" value="">
-                    <button type="submit" class="btn btn-outline-secondary btn-sm">Clear & re-vote</button>
-                </form>
-            {% endif %}
-        {% else %}
-            {% if token %}
-                <div class="d-flex gap-2 mb-3 flex-wrap justify-content-center">
-                    <input type="text" id="vote-input" placeholder="e.g. Valorant, Among Us" 
-                        value="{{ my_game_vote or '' }}" class="form-control" style="max-width: 220px;"
-                        onkeydown="if(event.key==='Enter'){event.preventDefault();submitVote();}">
-                    <button type="button" class="btn btn-primary" onclick="submitVote()">Vote</button>
+            <h4 class="section-title">We're playing</h4>
+            <div class="chosen-game-display d-flex justify-content-center align-items-center gap-3">
+                <img id="chosen-game-img" class="chosen-game-cover" src="" alt="">
+                <div class="chosen-game-info">
+                    <span class="chosen-game-name">{{ session.chosen_game }}</span>
+                    {% if is_host %}
+                    <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-2">
+                        <input type="hidden" name="game_name" value="">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">Clear & re-vote</button>
+                    </form>
+                    {% endif %}
                 </div>
-                <script>
-                function submitVote() {
-                    const gameName = document.getElementById('vote-input').value.trim();
-                    if (!gameName) return;
-                    const fd = new FormData();
-                    fd.append('game_name', gameName);
-                    fetch("{{ url_for('main.vote_game', session_hash=session.hash_id) }}?token={{ token }}", {
-                        method: 'POST', body: fd
-                    }).then(() => {
-                        // SSE will pick up the change automatically — no reload needed
-                    });
-                }
-                </script>
-            {% else %}
-                <p class="small text-center" style="color: #aaa;">Join the session below to add your game vote!</p>
-            {% endif %}
+            </div>
+        {% elif token %}
+            <h4 class="section-title">What to play?</h4>
+            <p class="section-hint">Suggest a game — the host will choose based on highest votes.</p>
+            <div class="vote-input-row mb-3 d-flex justify-content-center align-items-center gap-2">
+                <input type="text"
+                    id="vote-input"
+                    placeholder="e.g. Valorant, Among Us"
+                    value="{{ my_game_vote or '' }}"
+                    class="form-control vote-field"
+                    style="max-width: 400px;"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();submitVote();}">
+
+                <button type="button" class="btn btn-primary" onclick="submitVote()">
+                    Vote
+                </button>
+            </div>
+            <script>
+            function submitVote() {
+                const gameName = document.getElementById('vote-input').value.trim();
+                if (!gameName) return;
+                const fd = new FormData();
+                fd.append('game_name', gameName);
+                fetch("{{ url_for('main.vote_game', session_hash=session.hash_id) }}?token={{ token }}", {
+                    method: 'POST', body: fd
+                });
+            }
+            </script>
             {% if game_tally %}
-                <p class="mb-2 small" style="color: #ccc;">Votes:</p>
-                <div class="d-flex flex-wrap gap-3 justify-content-center" id="game-tally-list">
+                <p class="section-hint mb-2">Current votes:</p>
+                <div class="game-tally-grid d-flex flex-wrap justify-content-center gap-3" id="game-tally-list">
                     {% for game_name, count in game_tally %}
-                        <div class="game-vote-card" data-game="{{ game_name }}">
-                            <img class="game-cover-img" src="" alt="{{ game_name }}" style="display:none;">
-                            <div class="game-vote-info">
-                                <span class="game-vote-name">{{ game_name }}</span>
-                                <span class="game-vote-count">{{ count }} vote{{ 's' if count != 1 else '' }}</span>
-                                {% if is_host %}
-                                    <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-1">
-                                        <input type="hidden" name="game_name" value="{{ game_name }}">
-                                        <button type="submit" class="btn btn-outline-success btn-med" style="font-size:0.7rem">Set ✓</button>
-                                    </form>
-                                {% endif %}
-                            </div>
+                    <div class="game-vote-card" data-game="{{ game_name }}">
+                        <img class="game-cover-img" src="" alt="{{ game_name }}" style="display:none;">
+                        <div class="game-vote-info">
+                            <span class="game-vote-name">{{ game_name }}</span>
+                            <span class="game-vote-count">{{ count }} vote{{ 's' if count != 1 else '' }}</span>
+                            {% if is_host %}
+                            <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-1">
+                                <input type="hidden" name="game_name" value="{{ game_name }}">
+                                <button type="submit" class="btn btn-outline-success btn-sm" style="font-size:0.7rem;">Set ✓</button>
+                            </form>
+                            {% endif %}
                         </div>
+                    </div>
                     {% endfor %}
                 </div>
             {% else %}
-                <div class="d-flex flex-wrap gap-3 justify-content-center" id="game-tally-list"></div>
-                <p class="mb-0 small" id="no-votes-msg" style="color: #aaa;">No votes yet. Suggest a game above.</p>
+                <div class="game-tally-grid" id="game-tally-list"></div>
+                <p class="section-hint text-center" id="no-votes-msg">No votes yet — suggest a game above.</p>
+            {% endif %}
+        {% else %}
+            {# Non-member view: teaser only, no vote input #}
+            <h4 class="section-title">What to play?</h4>
+            <p class="section-hint text-center" style="padding: 1rem 0;">
+                Join the session below to suggest a game and see what the squad is voting for.
+            </p>
+            {% if game_tally %}
+                <p class="section-hint mb-2">Current votes:</p>
+                <div class="game-tally-grid" id="game-tally-list">
+                    {% for game_name, count in game_tally %}
+                    <div class="game-vote-card" data-game="{{ game_name }}">
+                        <img class="game-cover-img" src="" alt="{{ game_name }}" style="display:none;">
+                        <div class="game-vote-info">
+                            <span class="game-vote-name">{{ game_name }}</span>
+                            <span class="game-vote-count">{{ count }} vote{{ 's' if count != 1 else '' }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="game-tally-grid" id="game-tally-list"></div>
+                <p class="section-hint text-center" id="no-votes-msg">No votes yet.</p>
             {% endif %}
         {% endif %}
     </div>
-    </div>
 
+    {# ── JOIN FORM (non-members only) ─────────────────────────────────────── #}
     {% if not token %}
-    <div class="mb-5 mx-auto" style="max-width: 600px;">
-        <div class="p-4 border rounded shadow" style="background-color: #222; border-color: #444;">
-            <h3 class="mb-1 fw-bold text-center text-white">Want to join?</h3>
-            <p class="text-center small mb-4" style="color: #bbb;">Join the session to lock in your availability!</p>
+    <div class="section-card mb-4" id="join-section">
+        <h4 class="section-title">Want to join?</h4>
+        <p class="section-hint text-center mb-4">Save your availability and join the session.</p>
 
-            <form action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" id="join-form">
+        <div class="mx-auto" style="max-width: 520px;">
+            <div action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" id="join-form">
+            <form action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" id="join-form-inner">
                 <input type="hidden" name="temp_availability" id="temp-availability-input" value="[]">
-                
-                <div class="row g-3">
-                    <div class="col-md-6">
+
+                <div class="row g-3 mb-3">
+                    <div class="col-sm-6">
                         <label class="form-label text-white small mb-1">Name</label>
-                        <input type="text" name="name" placeholder="Your name" required class="form-control" style="background: #333; color: white; border: 1px solid #555;">
+                        <input type="text" name="name" placeholder="Your name" required
+                               class="form-control join-input">
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-sm-6">
                         <label class="form-label text-white small mb-1">Email</label>
-                        <input type="email" name="email" placeholder="To receive your link" required class="form-control" style="background: #333; color: white; border: 1px solid #555;">
+                        <input type="email" name="email" placeholder="For your personal link" required
+                               class="form-control join-input">
                     </div>
                 </div>
 
-                <div class="mt-4 p-3 rounded" style="background-color: #2a2a2a; border: 1px dashed #666;">
-                    <label class="form-label text-white small fw-bold mb-1">Game Suggestion (Optional)</label>
-                    <p class="small text-muted mb-2" style="font-size: 0.8rem;">What do you want to play?</p>
-                    <input type="text" name="game_name" placeholder="e.g. Valorant, Among Us" class="form-control" style="background: #333; color: white; border: 1px solid #555;">
+                <div class="mb-4">
+                    <label class="form-label text-white small mb-1">Game Suggestion <span style="color:#888;">(optional)</span></label>
+                    <input type="text" name="game_name" placeholder="e.g. Valorant, Among Us"
+                           class="form-control join-input">
                 </div>
 
-                <button type="submit" class="btn btn-primary w-100 py-2 fw-bold mt-4" style="font-size: 1.1rem;">
-                    Join Session & Save Times
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-bold join-submit">
+                    Join Session &amp; Save Times
                 </button>
             </form>
+            </div>
         </div>
     </div>
-    
+
     <script>
-    document.getElementById('join-form').addEventListener('submit', function() {
+    document.getElementById('join-form-inner').addEventListener('submit', function() {
         if (window.tempBlocks && window.tempBlocks.length > 0) {
             document.getElementById('temp-availability-input').value = JSON.stringify(window.tempBlocks);
         }
@@ -171,59 +214,50 @@
     </script>
     {% endif %}
 
+    {# ── INVITE LINKS (members only) ──────────────────────────────────────── #}
     {% if token %}
-    <div class="mt-4 p-3 border rounded">
-        <h4 class="mb-3">Invite Links</h4>
+    <div class="section-card mb-4">
+        <h4 class="section-title">Invite Links</h4>
         {% if is_host %}
-        <div class="mb-3">
-            <label class="form-label">Public Join Link (anyone can join)</label>
-            <div class="d-flex gap-2 align-items-center">
-                <input type="text" readonly class="form-control"
+        <div class="mb-4">
+            <label class="form-label small text-white-50 mb-1">Public Join Link <span style="color:#888;">(anyone can join)</span></label>
+            <div class="link-row">
+                <input type="text" readonly class="form-control link-input"
                     value="{{ url_for('main.view_session', session_hash=session.hash_id, _external=True) }}">
-                <button class="btn btn-outline-secondary" onclick="copyLink(this)">Copy</button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="copyLink(this)">Copy</button>
             </div>
-            <small style="color: #555;">Send this link to your squad to join the session.</small>
         </div>
         {% endif %}
         <div>
-            <label class="form-label">Your Personal Link</label>
-            <div class="d-flex gap-2 align-items-center">
-                <input type="text" readonly class="form-control"
+            <label class="form-label small text-white-50 mb-1">Your Personal Link</label>
+            <div class="link-row">
+                <input type="text" readonly class="form-control link-input"
                     value="{{ url_for('main.view_session', session_hash=session.hash_id, token=participant.token, _external=True) }}">
-                <button class="btn btn-outline-secondary" onclick="copyLink(this)">Copy</button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="copyLink(this)">Copy</button>
             </div>
-            <small style="color: #555;">Use this link to access or update your availability later.</small>
+            <small class="text-white-50">Use this link to update your availability later.</small>
         </div>
     </div>
     {% endif %}
 
-    <script>
-    function copyLink(btn) {
-        const input = btn.previousElementSibling;
-        input.select();
-        input.setSelectionRange(0, 99999);
-        navigator.clipboard.writeText(input.value);
-        btn.textContent = "Copied!";
-        setTimeout(() => btn.textContent = "Copy", 1500);
-    }
-    </script>
-
+    {# ── HOST CONTROLS ────────────────────────────────────────────────────── #}
     {% if is_host %}
-    <div class="mt-4 p-4 border rounded text-center" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 2px solid rgba(255,255,255,0.15); box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-        <h4 class="mb-2 fw-bold text-white" style="font-size: 1.5rem; letter-spacing: 0.05em;">HOST CONTROLS</h4>
-        <div class="mb-3 pb-2 border-bottom border-secondary" style="border-color: rgba(255,255,255,0.2) !important;"></div>
-        <div class="row g-3 justify-content-center">
-            <div class="col-12 col-md-8 col-lg-6">
-                <h5 class="mb-2 fw-bold text-white">Auto Pick Time</h5>
-                <p class="text-white-50 small mb-2">Sets the session to a time when everyone is available.</p>
-                <a href="{{ url_for('main.auto_pick', session_hash=session.hash_id, token=participant.token) }}" class="btn btn-primary mb-3">Auto Pick Time</a>
+    <div class="section-card host-controls-card mb-4">
+        <h4 class="section-title">Host Controls</h4>
+        <div class="host-controls-grid">
+            <div class="host-control-block">
+                <p class="fw-bold text-white mb-4">Auto Pick Time</p>
+                <p class="small text-white-50 mb-3">Picks a time where everyone overlaps.</p>
+                <a href="{{ url_for('main.auto_pick', session_hash=session.hash_id, token=participant.token) }}"
+                   class="btn btn-primary  d-block mx-auto" style="width: 100%;">Auto Pick</a>
             </div>
-            <div class="col-12 col-md-8 col-lg-6">
-                <h5 class="mb-2 fw-bold text-white">Manual Pick Time</h5>
+            <div class="host-control-block">
+                <p class="fw-bold text-white mb-1">Manual Pick Time</p>
+                <p class="small text-white-50 mb-3">Set any specific date and time.</p>
                 <form action="{{ url_for('main.manual_pick', session_hash=session.hash_id, token=participant.token) }}"
-                    method="POST" class="d-flex flex-column flex-sm-row gap-2 justify-content-center">
-                    <input type="datetime-local" name="manual_time" required class="form-control">
-                    <button type="submit" class="btn btn-success w-100 w-sm-auto">Set Time</button>
+                      method="POST" class="d-flex flex-column gap-2">
+                    <input type="datetime-local" name="manual_time" required class="form-control join-input">
+                    <button type="submit" class="btn btn-success">Set Time</button>
                 </form>
             </div>
         </div>
@@ -232,14 +266,16 @@
 
 </div>
 
+{# ── SCRIPTS ──────────────────────────────────────────────────────────────── #}
 <script>
-window.squadScheduleData = {{ grouped_json|tojson }};
-window.squadScheduleToken = {{ (token or '')|tojson }};
-window.squadScheduleHash = {{ session.hash_id|tojson }};
+window.squadScheduleData   = {{ grouped_json|tojson }};
+window.squadScheduleToken  = {{ (token or '')|tojson }};
+window.squadScheduleHash   = {{ session.hash_id|tojson }};
 window.squadScheduleMyName = {{ (participant.name if participant else '')|tojson }};
-window.squadIsHost = {{ 'true' if is_host else 'false' }};
-window.squadToken = {{ (token or '')|tojson }};
+window.squadIsHost         = {{ 'true' if is_host else 'false' }};
+window.squadToken          = {{ (token or '')|tojson }};
 </script>
+
 <link rel="stylesheet" href="/static/css/calendar.css">
 <script src="/static/js/calendar.js" defer></script>
 
@@ -247,7 +283,17 @@ window.squadToken = {{ (token or '')|tojson }};
 <script src="/static/js/game_covers.js" defer></script>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="/static/js/session_ws.js" defer></script>
+
 <script>
+function copyLink(btn) {
+    const input = btn.previousElementSibling;
+    input.select();
+    input.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(input.value);
+    btn.textContent = "Copied!";
+    setTimeout(() => btn.textContent = "Copy", 1500);
+}
+
 function submitConfirm(token, status) {
     const fd = new FormData();
     fd.append('status', status);

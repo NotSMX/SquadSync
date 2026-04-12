@@ -8,34 +8,47 @@
             const res = await fetch(url);
             const data = await res.json();
             return data.results?.[0]?.background_image || null;
-        } catch { return null; }
+        } catch {
+            return null;
+        }
     }
 
     async function applycover(card) {
         const img = card.querySelector('.game-cover-img');
-        if (!img || img.dataset.loaded) return; // skip if already fetched
+        if (!img || img.dataset.loaded) return;
+
         const cover = await fetchCover(card.dataset.game);
-        if (cover && img) {
+        if (cover) {
             img.src = cover;
-            img.style.display = 'block'; // ← was missing
+            img.style.display = 'block';
             img.dataset.loaded = 'true';
         }
     }
 
-    // Initial load — cover existing cards
-    document.querySelectorAll('#game-tally-list [data-game]').forEach(applycover);
+    function initGameCovers() {
+        document.querySelectorAll('#game-tally-list [data-game]')
+            .forEach(applycover);
+    }
 
-    // Expose for SSE-injected cards
-    window.applyGameCover = applycover;
+    function initChosenGame() {
+        const chosenImg = document.getElementById('chosen-game-img');
+        const chosenName = document.querySelector('.chosen-game-name');
 
-    // Chosen game banner
-    const chosenEl = document.getElementById('chosen-game-img');
-    const chosenNameEl = chosenEl?.previousElementSibling?.querySelector('strong');
-    if (chosenEl && chosenNameEl) {
-        fetchCover(chosenNameEl.textContent).then(cover => {
-            if (!cover) return;
-            chosenEl.innerHTML = `<img src="${cover}" alt="${chosenNameEl.textContent}"
-                style="width:100%;max-width:320px;border-radius:10px;margin-top:8px;object-fit:cover;aspect-ratio:16/9;">`;
+        if (!chosenImg || !chosenName) return;
+
+        fetchCover(chosenName.textContent).then(cover => {
+            if (cover) {
+                chosenImg.src = cover;
+            }
         });
     }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initGameCovers();
+        initChosenGame();
+    });
+
+    // expose for websocket updates
+    window.applyGameCover = applycover;
+
 })();

@@ -51,85 +51,128 @@
     <div class="mt-4 p-3 border rounded">
         <h4 class="mb-3 text-center">Squad Schedule</h4>
         {% if token %}
-        <p class="small mb-1 text-center" style="color: #aaa;">Drag to add your availability. Click a block to remove it.</p>
-        <div class="text-center mb-2">
-            <button id="clear-availability" class="btn btn-outline-danger btn-sm">✕ Clear my availability</button>
+            <p class="small mb-1 text-center" style="color: #aaa;">Drag to add your availability. Click a block to remove it.</p>
+            <div class="text-center mb-2">
+                <button id="clear-availability" class="btn btn-outline-danger btn-sm">✕ Clear my availability</button>
+            </div>
+        {% else %}
+            <p class="small mb-2 text-center" style="color: #aaa;">Drag to add your temporary availability. <strong>Save it by joining below!</strong></p>
+        {% endif %}
+        
+        <div id="group-calendar" style="min-height: 450px; width: 100%;"></div>
+
+        {% if not token %}
+        <div class="alert alert-info mt-3 text-center mb-0 border-primary" style="background-color: rgba(13, 110, 253, 0.1); color: #8bb9fe;">
+            <strong>Happy with your times?</strong> Scroll down to join the session and lock them in!
         </div>
         {% endif %}
-        <div id="group-calendar" style="min-height: 450px; width: 100%;"></div>
     </div>
 
-    <!-- WHAT TO PLAY (second) -->
     <div class="mb-4 mt-2 mx-auto" style="max-width: 600px;">
-    <div class="p-3 border rounded" style="background-color: #454545; border-color: #555;">
-        <h4 class="mb-1 fw-bold" style="color: #eee;">What to play?</h4>
-        <p class="small mb-2" style="color: #ccc;">Add your preferred game. The host will choose based on highest votes.</p>
-        {% if session.chosen_game %}
-            <p class="mb-0 fw-bold" style="color: #fff;">We're playing: <strong>{{ session.chosen_game }}</strong></p>
-            <div id="chosen-game-img" class="mt-2"></div>
-            {% if is_host %}
-                <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-2">
-                    <input type="hidden" name="game_name" value="">
-                    <button type="submit" class="btn btn-outline-secondary btn-sm">Clear & re-vote</button>
-                </form>
-            {% endif %}
-        {% else %}
-            {% if token %}
-                <div class="d-flex gap-2 mb-3 flex-wrap justify-content-center">
-                    <input type="text" id="vote-input" placeholder="e.g. Valorant, Among Us" 
-                        value="{{ my_game_vote or '' }}" class="form-control" style="max-width: 220px;"
-                        onkeydown="if(event.key==='Enter'){event.preventDefault();submitVote();}">
-                    <button type="button" class="btn btn-primary" onclick="submitVote()">Vote</button>
-                </div>
-                <script>
-                function submitVote() {
-                    const gameName = document.getElementById('vote-input').value.trim();
-                    if (!gameName) return;
-                    const fd = new FormData();
-                    fd.append('game_name', gameName);
-                    fetch("{{ url_for('main.vote_game', session_hash=session.hash_id) }}?token={{ token }}", {
-                        method: 'POST', body: fd
-                    }).then(() => {
-                        // SSE will pick up the change automatically — no reload needed
-                    });
-                }
-                </script>
+        <div class="p-3 border rounded" style="background-color: #333; border-color: #444;">
+            {% if session.chosen_game %}
+                <h4 class="mb-1 fw-bold text-center" style="color: #eee;">We're playing: <strong>{{ session.chosen_game }}</strong></h4>
+                <div id="chosen-game-img" class="mt-2 text-center"></div>
+                {% if is_host %}
+                    <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-3 text-center">
+                        <input type="hidden" name="game_name" value="">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">Clear & re-vote</button>
+                    </form>
+                {% endif %}
             {% else %}
-                <form action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" class="mb-3">
-                    <div class="d-flex flex-column gap-2 text-start">
-                        <input type="text" name="name" placeholder="Your name" required class="form-control" style="color: #333;">
-                        <input type="email" name="email" placeholder="Your email" required class="form-control" style="color: #333;">
-                        <input type="text" name="game_name" placeholder="Preferred game (e.g. Valorant, Among Us)" required class="form-control" style="color: #333;">
-                        <button type="submit" class="btn btn-primary">Join & vote</button>
-                    </div>
-                </form>
-            {% endif %}
-            {% if game_tally %}
-                <p class="mb-2 small" style="color: #ccc;">Votes:</p>
-                <div class="d-flex flex-wrap gap-3 justify-content-center" id="game-tally-list">
-                    {% for game_name, count in game_tally %}
-                        <div class="game-vote-card" data-game="{{ game_name }}">
-                            <img class="game-cover-img" src="" alt="{{ game_name }}" style="display:none;">
-                            <div class="game-vote-info">
-                                <span class="game-vote-name">{{ game_name }}</span>
-                                <span class="game-vote-count">{{ count }} vote{{ 's' if count != 1 else '' }}</span>
-                                {% if is_host %}
-                                    <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-1">
-                                        <input type="hidden" name="game_name" value="{{ game_name }}">
-                                        <button type="submit" class="btn btn-outline-success btn-med" style="font-size:0.7rem">Set ✓</button>
-                                    </form>
-                                {% endif %}
+                <h4 class="mb-2 fw-bold text-center" style="color: #eee;">What to play?</h4>
+                {% if game_tally %}
+                    <p class="mb-3 small text-center" style="color: #ccc;">Current squad votes:</p>
+                    <div class="d-flex flex-wrap gap-3 justify-content-center" id="game-tally-list">
+                        {% for game_name, count in game_tally %}
+                            <div class="game-vote-card" data-game="{{ game_name }}">
+                                <img class="game-cover-img" src="" alt="{{ game_name }}" style="display:none;">
+                                <div class="game-vote-info">
+                                    <span class="game-vote-name">{{ game_name }}</span>
+                                    <span class="game-vote-count">{{ count }} vote{{ 's' if count != 1 else '' }}</span>
+                                    {% if is_host %}
+                                        <form action="{{ url_for('main.set_game', session_hash=session.hash_id) }}?token={{ token }}" method="POST" class="mt-1">
+                                            <input type="hidden" name="game_name" value="{{ game_name }}">
+                                            <button type="submit" class="btn btn-outline-success btn-med" style="font-size:0.7rem">Set ✓</button>
+                                        </form>
+                                    {% endif %}
+                                </div>
                             </div>
-                        </div>
-                    {% endfor %}
-                </div>
-            {% else %}
-                <div class="d-flex flex-wrap gap-3 justify-content-center" id="game-tally-list"></div>
-                <p class="mb-0 small" id="no-votes-msg" style="color: #aaa;">No votes yet. Suggest a game above.</p>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="d-flex flex-wrap gap-3 justify-content-center" id="game-tally-list"></div>
+                    <p class="mb-0 small text-center" id="no-votes-msg" style="color: #aaa;">No votes yet. Suggest a game below!</p>
+                {% endif %}
+
+                {% if token %}
+                    <hr style="border-color: #555;" class="my-3">
+                    <p class="small mb-2 text-center" style="color: #ccc;">Add your preferred game.</p>
+                    <div class="d-flex gap-2 mb-2 flex-wrap justify-content-center">
+                        <input type="text" id="vote-input" placeholder="e.g. Valorant, Among Us" 
+                            value="{{ my_game_vote or '' }}" class="form-control" style="max-width: 220px;"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault();submitVote();}">
+                        <button type="button" class="btn btn-primary" onclick="submitVote()">Vote</button>
+                    </div>
+                    <script>
+                    function submitVote() {
+                        const gameName = document.getElementById('vote-input').value.trim();
+                        if (!gameName) return;
+                        const fd = new FormData();
+                        fd.append('game_name', gameName);
+                        fetch("{{ url_for('main.vote_game', session_hash=session.hash_id) }}?token={{ token }}", {
+                            method: 'POST', body: fd
+                        });
+                    }
+                    </script>
+                {% endif %}
             {% endif %}
-        {% endif %}
+        </div>
     </div>
+
+    {% if not token %}
+    <div class="mb-5 mx-auto" style="max-width: 600px;">
+        <div class="p-4 border rounded shadow" style="background-color: #222; border-color: #444;">
+            <h3 class="mb-1 fw-bold text-center text-white">Want to join?</h3>
+            <p class="text-center small mb-4" style="color: #bbb;">Join the session to lock in your availability!</p>
+
+            <form action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" id="join-form">
+                <input type="hidden" name="temp_availability" id="temp-availability-input" value="[]">
+                
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-white small mb-1">Name</label>
+                        <input type="text" name="name" placeholder="Your name" required class="form-control" style="background: #333; color: white; border: 1px solid #555;">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-white small mb-1">Email</label>
+                        <input type="email" name="email" placeholder="To receive your link" required class="form-control" style="background: #333; color: white; border: 1px solid #555;">
+                    </div>
+                </div>
+
+                <div class="mt-4 p-3 rounded" style="background-color: #2a2a2a; border: 1px dashed #666;">
+                    <label class="form-label text-white small fw-bold mb-1">Game Suggestion (Optional)</label>
+                    <p class="small text-muted mb-2" style="font-size: 0.8rem;">What do you want to play?</p>
+                    <input type="text" name="game_name" placeholder="e.g. Valorant, Among Us" class="form-control" style="background: #333; color: white; border: 1px solid #555;">
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-bold mt-4" style="font-size: 1.1rem;">
+                    Join Session & Save Times
+                </button>
+            </form>
+        </div>
     </div>
+    
+    <script>
+    // Intercept form submission to grab the latest temp blocks from the calendar
+    document.getElementById('join-form').addEventListener('submit', function() {
+        // If your calendar.js stores temp events globally (e.g., window.tempBlocks), sync them here.
+        if (window.tempBlocks && window.tempBlocks.length > 0) {
+            document.getElementById('temp-availability-input').value = JSON.stringify(window.tempBlocks);
+        }
+    });
+    </script>
+    {% endif %}
 
     <!-- INVITE LINKS -->
     {% if token %}

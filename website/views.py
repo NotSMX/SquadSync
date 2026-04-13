@@ -465,11 +465,11 @@ def confirm(session_id, token):
         session_id=session_id, token=token
     ).first_or_404()
     status = request.form.get("status")
-    
+
     confirmation = Confirmation.query.filter_by(
         participant_id=participant.id, session_id=session_id
     ).first()
-    
+
     if not confirmation:
         confirmation = Confirmation(
             participant_id=participant.id, session_id=session_id, status=status
@@ -538,7 +538,7 @@ def join_and_vote(session_hash):
             session_id=game_session.id, participant_id=participant.id, game_name=game_name
         )
         db.session.add(vote)
-    
+        
     db.session.commit()
     
     # Notify user with their personal link
@@ -1146,7 +1146,7 @@ def experiment_session():
         from datetime import timezone as _tz  # noqa: PLC0415
         now = datetime.now(_tz.utc).isoformat()
         db.session.execute(
-            text("INSERT INTO experiment_result (condition, experiment_session_id, participant_id, joined, link_token, time_to_join_ms, created_at) VALUES (:cond, :es_id, NULL, 0, :token, NULL, :now)"),
+            text("INSERT INTO experiment_result (condition, experiment_session_id, participant_id, joined, link_token, time_to_join_ms, created_at) VALUES (:cond, :es_id, NULL, false, :token, NULL, :now)"),
             {"cond": condition, "es_id": es.id, "token": link_token, "now": now}
         )
         db.session.commit()
@@ -1233,12 +1233,12 @@ def experiment_join():
 
     if link_token:
         result_row = db.session.execute(
-            text("SELECT id FROM experiment_result WHERE link_token = :token AND joined = 0 LIMIT 1"),
+            text("SELECT id FROM experiment_result WHERE link_token = :token AND joined = false LIMIT 1"),
             {"token": link_token}
         ).fetchone()
         if result_row:
             db.session.execute(
-                text("UPDATE experiment_result SET participant_id=:pid, joined=1, time_to_join_ms=:ms WHERE id=:rid"),
+                text("UPDATE experiment_result SET participant_id=:pid, joined=true, time_to_join_ms=:ms WHERE id=:rid"),
                 {"pid": participant.id, "ms": time_to_join_ms, "rid": result_row[0]}
             )
     else:
@@ -1264,7 +1264,7 @@ def experiment_no_join():
 
     if link_token:
         db.session.execute(
-            text("UPDATE experiment_result SET time_to_join_ms=:ms WHERE link_token=:token AND joined=0"),
+            text("UPDATE experiment_result SET time_to_join_ms=:ms WHERE link_token=:token AND joined=false"),
             {"ms": elapsed, "token": link_token}
         )
         db.session.commit()

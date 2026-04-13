@@ -80,7 +80,7 @@
       <div class="stat-card orange">
         <div class="stat-label">Activation rate</div>
         <div class="stat-value">{{ metrics.activation_rate }}</div>
-        <div class="stat-hint">% who hosted or confirmed ≥1 session</div>
+        <div class="stat-hint">% who hosted, joined, or confirmed ≥1 session</div>
       </div>
     </div>
     <div class="col-md-4">
@@ -165,29 +165,204 @@
 
   <!-- Emails table -->
   <div class="panel mt-4 p-4">
-    <h4 class="mb-3 text-center">Registered emails</h4>
-    <p class="text-center small mb-3" style="color: #aaa;">{{ metrics.unique_emails|length }} unique email(s) collected</p>
-    {% if metrics.unique_emails %}
-      <table class="table sessions-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Email</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for email in metrics.unique_emails %}
-          <tr>
-            <td>{{ loop.index }}</td>
-            <td>{{ email }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="text-center small" style="color: #aaa;">No emails collected yet.</p>
-    {% endif %}
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <h4 class="mb-0">Registered emails</h4>
+      <button class="btn btn-outline-secondary btn-sm" onclick="toggleEmails(this)">Show</button>
+    </div>
+    <p class="text-center small mb-0" style="color: #aaa;">{{ metrics.unique_emails|length }} unique email(s) collected</p>
+    <div id="emails-table" style="display:none; margin-top: 1rem;">
+      {% if metrics.unique_emails %}
+        <table class="table sessions-table">
+          <thead>
+            <tr><th>#</th><th>Email</th></tr>
+          </thead>
+          <tbody>
+            {% for email in metrics.unique_emails %}
+            <tr><td>{{ loop.index }}</td><td>{{ email }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="text-center small" style="color: #aaa;">No emails collected yet.</p>
+      {% endif %}
+    </div>
   </div>
+  <script>
+  function toggleEmails(btn) {
+    var table = document.getElementById('emails-table');
+    var hidden = table.style.display === 'none';
+    table.style.display = hidden ? 'block' : 'none';
+    btn.textContent = hidden ? 'Hide' : 'Show';
+  }
+  </script>
+
+  <!-- Experiment Panel -->
+  <hr class="section-divider">
+  <p class="section-label">Experiment — Join Flow A/B Test</p>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <div class="stat-card cyan">
+        <div class="stat-label">Condition A — Calendar First</div>
+        <div class="stat-value" id="exp-a-joins">—</div>
+        <div class="stat-hint" id="exp-a-total">Loading…</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="stat-card magenta">
+        <div class="stat-label">Condition B — Vote First</div>
+        <div class="stat-value" id="exp-b-joins">—</div>
+        <div class="stat-hint" id="exp-b-total">Loading…</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="stat-card lime">
+        <div class="stat-label">Avg time to join</div>
+        <div class="stat-value" id="exp-avg-time">—</div>
+        <div class="stat-hint">Across all joined participants</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generate experiment links -->
+  <div class="panel mb-3 p-3 text-center">
+    <p class="section-label mb-3">Generate Experiment Link</p>
+    <div class="d-flex gap-2 justify-content-center flex-wrap mb-3">
+      <select id="exp-condition-select" class="form-control join-input" style="max-width:160px;">
+        <option value="A">Condition A</option>
+        <option value="B">Condition B</option>
+      </select>
+      <button class="btn btn-outline-primary btn-sm" onclick="generateExpLink(this)">Generate Link</button>
+    </div>
+    <div id="exp-link-output" style="display:none;" class="mx-auto" style="max-width:560px;">
+      <label class="form-label text-white small mb-1">Share this link with the participant</label>
+      <div class="link-row justify-content-center">
+        <input type="text" readonly id="exp-link-value" class="form-control link-input">
+        <button class="btn btn-outline-secondary btn-sm" onclick="copyExpLink(this)">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results table -->
+  <div class="panel mb-3 p-3">
+    <p class="section-label mb-2">Results</p>
+    <div id="exp-results-table">
+      <p style="color: rgba(255,255,255,0.3); font-size:0.85rem;">Loading…</p>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="d-flex gap-2 flex-wrap justify-content-center">
+    <a href="{{ url_for('main.experiment_export', format='csv') }}" class="btn btn-outline-primary btn-sm">
+      ↓ Export CSV
+    </a>
+    <a href="{{ url_for('main.experiment_export', format='json') }}" class="btn btn-outline-primary btn-sm">
+      ↓ Export JSON
+    </a>
+    <form action="{{ url_for('main.experiment_reset_participants') }}" method="POST"
+          onsubmit="return confirm('Clear all participants from the experiment? Result rows will be kept.');">
+      <button type="submit" class="btn btn-outline-warning btn-sm">Clear Participants</button>
+    </form>
+    <form action="{{ url_for('main.experiment_reset_all') }}" method="POST"
+          onsubmit="return confirm('Full reset — delete ALL results and participants? This cannot be undone.');">
+      <button type="submit" class="btn btn-outline-danger btn-sm">Full Reset</button>
+    </form>
+  </div>
+
+  <script>
+  function loadExpResults() {
+    fetch('/experiment/results')
+      .then(r => r.json())
+      .then(function(data) {
+        var aRows = data.filter(r => r.condition === 'A');
+        var bRows = data.filter(r => r.condition === 'B');
+        var aJoins = aRows.filter(r => r.joined).length;
+        var bJoins = bRows.filter(r => r.joined).length;
+
+        document.getElementById('exp-a-joins').textContent =
+          aRows.length ? Math.round(aJoins / aRows.length * 100) + '%' : '—';
+        document.getElementById('exp-a-total').textContent =
+          aJoins + ' joined / ' + aRows.length + ' total';
+
+        document.getElementById('exp-b-joins').textContent =
+          bRows.length ? Math.round(bJoins / bRows.length * 100) + '%' : '—';
+        document.getElementById('exp-b-total').textContent =
+          bJoins + ' joined / ' + bRows.length + ' total';
+
+        var timings = data.filter(r => r.joined && r.time_to_join_ms != null)
+                          .map(r => r.time_to_join_ms);
+        var avgTime = timings.length
+          ? Math.round(timings.reduce((a,b) => a+b, 0) / timings.length)
+          : null;
+        document.getElementById('exp-avg-time').textContent =
+          avgTime != null ? (avgTime / 1000).toFixed(1) + 's' : '—';
+
+        if (data.length === 0) {
+          document.getElementById('exp-results-table').innerHTML =
+            '<p style="color:rgba(255,255,255,0.3);font-size:0.85rem;">No results yet.</p>';
+          return;
+        }
+        var html = '<table class="table sessions-table"><thead><tr>' +
+          '<th>#</th><th>Condition</th><th>Joined</th>' +
+          '<th>Time to join</th><th>Recorded at</th>' +
+          '</tr></thead><tbody>';
+        data.slice().reverse().forEach(function(r, i) {
+          var time = r.time_to_join_ms != null
+            ? (r.time_to_join_ms / 1000).toFixed(1) + 's' : '—';
+          var joined = r.joined
+            ? '<span class="status-pill s-yes">Yes</span>'
+            : '<span class="status-pill s-no">No</span>';
+          var ts = r.created_at ? new Date(r.created_at).toLocaleString() : '—';
+          html += '<tr><td>' + (data.length - i) + '</td>' +
+            '<td><strong>' + r.condition + '</strong></td>' +
+            '<td>' + joined + '</td>' +
+            '<td>' + time + '</td>' +
+            '<td style="font-size:0.8rem;color:#888;">' + ts + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('exp-results-table').innerHTML = html;
+      })
+      .catch(function() {
+        document.getElementById('exp-results-table').innerHTML =
+          '<p style="color:#f87171;font-size:0.85rem;">Failed to load results.</p>';
+      });
+  }
+
+  function generateExpLink(btn) {
+    var cond = document.getElementById('exp-condition-select').value;
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    fetch('/experiment/generate_link', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({condition: cond})
+    })
+    .then(function(r) {
+      if (!r.ok) {
+        return r.text().then(function(t) { throw new Error('Server ' + r.status + ': ' + t.slice(0, 300)); });
+      }
+      return r.json();
+    })
+    .then(function(data) {
+      if (!data.link_token) throw new Error('No link_token in response: ' + JSON.stringify(data));
+      var link = window.location.origin + '/experiment?condition=' + data.condition + '&link_token=' + data.link_token;
+      document.getElementById('exp-link-value').value = link;
+      document.getElementById('exp-link-output').style.display = 'block';
+    })
+    .catch(function(err) { alert('Failed to generate link: ' + err.message); })
+    .finally(function() { btn.disabled = false; btn.textContent = 'Generate Link'; });
+  }
+
+  function copyExpLink(btn) {
+    var input = document.getElementById('exp-link-value');
+    input.select();
+    navigator.clipboard.writeText(input.value);
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  }
+
+  loadExpResults();
+  </script>
 
   <!-- Testing tools -->
   <div class="mt-5 pt-4 border-top border-secondary">

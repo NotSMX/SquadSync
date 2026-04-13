@@ -13,21 +13,46 @@ document.addEventListener('DOMContentLoaded', function() {
     var token = window.squadScheduleToken || '';
     var sessionHash = window.squadScheduleHash || '';
     
-    // Default name for unauthenticated users
+    // squadScheduleMyName is the real name once joined; fall back to temp label for pre-join
     var myName = window.squadScheduleMyName || 'You (Unsaved)';
     
     // Initialize global temp blocks array
     window.tempBlocks = [];
 
     var events = [];
-    var myColor = colors[0];
 
     var colorMap = {};
     var colorIndex = 0;
     Object.keys(grouped).forEach(function(name) {
-        colorMap[name] = colors[colorIndex % colors.length];
-        if (name === window.squadScheduleMyName) myColor = colorMap[name];
-        colorIndex++;
+        if (!colorMap[name]) {
+            colorMap[name] = colors[colorIndex % colors.length];
+            colorIndex++;
+        }
+        var color = colorMap[name];
+        // In experiment mode, there are no pre-loaded "mine" blocks — user starts fresh
+        var isMine = (name === myName);
+
+        (grouped[name] || []).forEach(function(block) {
+            if (block.start && block.end) {
+                events.push({
+                    title: name,
+                    start: block.start,
+                    end: block.end,
+                    display: 'auto',
+                    editable: isMine,
+                    startEditable: isMine,
+                    durationEditable: isMine,
+                    interactive: isMine,
+                    classNames: isMine ? ['fc-event-mine'] : [],
+                    backgroundColor: isMine ? color + "99" : color + "20",
+                    borderColor: "transparent",
+                    extendedProps: { 
+                        startStr: block.start, 
+                        endStr: block.end 
+                    }
+                });
+            }
+        });
     });
 
     function getColor(name) {
@@ -38,22 +63,11 @@ document.addEventListener('DOMContentLoaded', function() {
         return colorMap[name];
     }
 
-    Object.keys(grouped).forEach(function(name) {
-        var color = getColor(name);
-        (grouped[name] || []).forEach(function(block) {
-            if (block.start && block.end) {
-                events.push({
-                    title: name, start: block.start, end: block.end,
-                    display: 'auto',
-                    editable: name === window.squadScheduleMyName,
-                    interactive: name === window.squadScheduleMyName,
-                    classNames: name === window.squadScheduleMyName ? ['fc-event-mine'] : [],
-                    backgroundColor: (name === window.squadScheduleMyName ? color + "99" : color + "20"),
-                    borderColor: "transparent"
-                });
-            }
-        });
-    });
+    // Derive myColor AFTER the colorMap is built from grouped data so it
+    // matches whatever color the server assigned to this participant's name.
+    // For a brand-new pre-join visitor their name isn't in grouped yet, so
+    // getColor() will assign the next available slot consistently.
+    var myColor = getColor(myName);
 
     document.documentElement.style.setProperty('--my-color', myColor);
     var s = document.createElement('style');
@@ -82,9 +96,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 .filter(function(e) { return e.title === window.squadScheduleMyName; })
                 .forEach(function(e) {
                     var fd = new FormData();
-                    fd.append('token', token); 
-                    fd.append('start', toLocalISOString(e.start));
-                    fd.append('end', toLocalISOString(e.end));
+                    fd.append('token', token);
+                    fd.append('start', e.startStr);
+                    fd.append('end', e.endStr);
                     fetch('/session/' + sessionHash + '/remove_availability', {
                         method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
                     });
@@ -102,7 +116,9 @@ document.addEventListener('DOMContentLoaded', function() {
         events: events,
         nowIndicator: true,
         selectable: true, // Always true for unauthenticated users
-        editable: true,   // Always true for unauthenticated users
+        editable: true,
+        eventStartEditable: true,
+        eventDurationEditable: true,
         selectMirror: false,
         selectOverlap: true,
         longPressDelay: 300,
@@ -110,8 +126,31 @@ document.addEventListener('DOMContentLoaded', function() {
         timeZone: 'UTC', 
 
         select: function(info) {
-            if (!sessionHash) return;
+            if (!sessionHash && !window.isExperiment) return;
             
+            if (window.isExperiment) {
+                window.tempBlocks.push({ start: info.startStr, end: info.endStr });
+
+                calendar.addEvent({
+                    title: myName,
+                    start: info.startStr,
+                    end: info.endStr,
+                    display: 'auto',
+                    editable: true,
+                    startEditable: true,
+                    durationEditable: true,
+                    interactive: true,
+                    classNames: ['fc-event-mine'],
+                    backgroundColor: myColor + "99",
+                    borderColor: "transparent",
+                    extendedProps: { 
+                        temp: true, 
+                        startStr: info.startStr, 
+                        endStr: info.endStr 
+                    }
+                });
+                return;
+            }
             var newStart = info.start.getTime();
             var newEnd = info.end.getTime();
 
@@ -129,10 +168,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 window.tempBlocks.push({ start: info.startStr, end: info.endStr });
 
                 calendar.addEvent({
-                    title: myName, start: info.start, end: info.end,
-                    display: 'auto', editable: true, interactive: true,
+                    title: myName, 
+                    start: info.startStr, 
+                    end: info.endStr,
+                    display: 'auto',
+                    editable: true,
+                    startEditable: true,
+                    durationEditable: true,
+                    interactive: true,
                     classNames: ['fc-event-mine'],
-                    backgroundColor: myColor + "99", borderColor: "transparent",
+                    backgroundColor: myColor + "99", 
+                    borderColor: "transparent",
                     extendedProps: { startStr: info.startStr, endStr: info.endStr }
                 });
                 return;
@@ -141,8 +187,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // AUTHENTICATED FLOW
             var fd = new FormData();
             fd.append('token', token);
-            fd.append('start', toLocalISOString(info.start));
-            fd.append('end', toLocalISOString(info.end));
+            fd.append('start', info.startStr);
+            fd.append('end', info.endStr);
             fetch('/session/' + sessionHash + '/add_availability', {
                 method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
@@ -157,9 +203,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         })
                         .forEach(function(e) {
                             var fd = new FormData();
-                            fd.append('token', token); 
-                            fd.append('start', toLocalISOString(e.start));
-                            fd.append('end', toLocalISOString(e.end));
+                            fd.append('token', token);
+                            fd.append('start', e.startStr);
+                            fd.append('end', e.endStr);
                             fetch('/session/' + sessionHash + '/remove_availability', {
                                 method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
                             });
@@ -167,26 +213,35 @@ document.addEventListener('DOMContentLoaded', function() {
                         });
 
                     calendar.addEvent({
-                        title: myName, start: info.start, end: info.end,
+                        title: myName, start: info.startStr, end: info.endStr,
                         display: 'auto', editable: true, interactive: true,
                         classNames: ['fc-event-mine'],
-                        backgroundColor: myColor + "99", borderColor: "transparent"
+                        backgroundColor: myColor + "99", borderColor: "transparent",
+                        extendedProps: { startStr: info.startStr, endStr: info.endStr }
                     });
                 }
             });
         },
 
         eventClick: function(info) {
-            // Desktop only — touch uses long-press
             if (window.matchMedia('(pointer: coarse)').matches) return;
-            if (info.event.title !== myName && info.event.title !== window.squadScheduleMyName) return;
+
+            // Check if it's "mine" in any of the three possible ways
+            const isMine = info.event.title === myName || 
+                        info.event.title === window.squadScheduleMyName ||
+                        window.isExperiment;
+
+            if (!isMine) return;
+
             if (!confirm("Remove this availability?")) return;
             handleEventRemoval(info.event);
         },
 
         eventDidMount: function(info) {
             if (!window.matchMedia('(pointer: coarse)').matches) return;
-            if (info.event.title !== myName && info.event.title !== window.squadScheduleMyName) return;
+            if (!window.isExperiment &&
+                info.event.title !== myName &&
+                info.event.title !== window.squadScheduleMyName) return;
 
             let pressTimer = null;
 
@@ -207,13 +262,50 @@ document.addEventListener('DOMContentLoaded', function() {
         },
         
         eventDrop: function(info) {
-            if (info.event.title !== myName && info.event.title !== window.squadScheduleMyName) { info.revert(); return; }
-            if (!token) { info.revert(); return; } // Prevent dragging temp blocks for now
+            if (window.isExperiment) {
+                // Use extendedProps keys for matching — they're set at create-time
+                // and avoid any UTC-vs-local-offset mismatch with .toISOString().
+                var oldStart = info.oldEvent.extendedProps && info.oldEvent.extendedProps.startStr
+                    ? info.oldEvent.extendedProps.startStr
+                    : info.oldEvent.startStr;
+                var oldEnd = info.oldEvent.extendedProps && info.oldEvent.extendedProps.endStr
+                    ? info.oldEvent.extendedProps.endStr
+                    : info.oldEvent.endStr;
+
+                var newStart = info.event.startStr;
+                var newEnd   = info.event.endStr;
+
+                window.tempBlocks = window.tempBlocks.map(function(b) {
+                    if (b.start === oldStart && b.end === oldEnd) {
+                        return { start: newStart, end: newEnd };
+                    }
+                    return b;
+                });
+
+                // Keep extendedProps in sync for future edits/removals
+                info.event.setExtendedProp('startStr', newStart);
+                info.event.setExtendedProp('endStr', newEnd);
+
+                document.dispatchEvent(new CustomEvent('synq:availability', {
+                    detail: {
+                        [myName]: window.tempBlocks
+                    }
+                }));
+
+                return;
+            }
+
+            if (!window.isExperiment) {
+                if (info.event.title !== myName && info.event.title !== window.squadScheduleMyName) {
+                    info.revert();
+                    return;
+                }
+            }
 
             var oldFd = new FormData();
             oldFd.append('token', token);
-            oldFd.append('start', toLocalISOString(info.oldEvent.start));
-            oldFd.append('end', toLocalISOString(info.oldEvent.end)); 
+            oldFd.append('start', info.oldEvent.startStr);
+            oldFd.append('end', info.oldEvent.endStr);
             fetch('/session/' + sessionHash + '/remove_availability', {
                 method: 'POST', body: oldFd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
@@ -223,10 +315,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 var newFd = new FormData();
                 newFd.append('token', token);
-                newFd.append('start', toLocalISOString(info.event.start));
-                newFd.append('end', toLocalISOString(info.event.end));
+                newFd.append('start', info.event.startStr);
+                newFd.append('end', info.event.endStr);
                 return fetch('/session/' + sessionHash + '/add_availability', {
                     method: 'POST', body: newFd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(r => r.json())
+                .then(function(addData) {
+                    if (!addData || addData.ok === false) { info.revert(); return; }
+                    info.event.setExtendedProp('startStr', info.event.startStr);
+                    info.event.setExtendedProp('endStr', info.event.endStr);
                 });
             })
             .catch(function() { info.revert(); });
@@ -236,6 +334,17 @@ document.addEventListener('DOMContentLoaded', function() {
     calendar.render();
 
     function handleEventRemoval(event) {
+        if (window.isExperiment) {
+            // Keep tempBlocks in sync so deleted events aren't submitted on join
+            var ep = event.extendedProps || {};
+            var startKey = ep.startStr || event.startStr;
+            var endKey   = ep.endStr   || event.endStr;
+            window.tempBlocks = window.tempBlocks.filter(function(b) {
+                return !(b.start === startKey && b.end === endKey);
+            });
+            event.remove();
+            return;
+        }
         // Handle unauthenticated removal
         if (!token) {
             if (event.extendedProps) {
@@ -248,8 +357,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Handle authenticated removal
         var fd = new FormData();
         fd.append('token', token);
-        fd.append('start', toLocalISOString(event.start));
-        fd.append('end', toLocalISOString(event.end));
+        fd.append('start', event.startStr);
+        fd.append('end', event.endStr);
         fetch('/session/' + sessionHash + '/remove_availability', {
             method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
@@ -299,9 +408,4 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    window.rebuildCalendar = rebuildCalendar;
-
-    document.addEventListener('synq:availability', function(e) {
-        rebuildCalendar(e.detail);
-    });
 });

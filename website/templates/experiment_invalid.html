@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel mb-4 p-4 text-center" style="max-width: 520px; margin: 4rem auto;">
+  {% if reason == "used" %}
+    <h2 class="session-title mb-3">Link Already Used</h2>
+    <p class="section-hint">This experiment link has already been used to join. Each link is single-use.</p>
+    <p class="section-hint">If you think this is a mistake, ask the host to generate a new link for you.</p>
+  {% elif reason == "invalid" %}
+    <h2 class="session-title mb-3">Invalid Link</h2>
+    <p class="section-hint">This experiment link is not valid. It may have been copied incorrectly.</p>
+    <p class="section-hint">Ask the host to generate a new link and try again.</p>
+  {% else %}
+    <h2 class="session-title mb-3">No Link Provided</h2>
+    <p class="section-hint">Experiment links are single-use and must be generated from the dashboard.</p>
+  {% endif %}
+  <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary mt-3">← Go Home</a>
+</div>
+{% endblock %}

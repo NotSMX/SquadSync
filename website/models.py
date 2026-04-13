@@ -117,6 +117,46 @@ class Confirmation(db.Model):
         return f"<Confirmation {self.status}>"
 
 
+class ExperimentSession(db.Model):
+    """
+    A controlled template session for the A/B experiment.
+    Holds fake title + pre-loaded availability blocks as JSON.
+    Participants who join during an experiment run are tracked separately
+    and can be wiped without touching real session data.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(100), nullable=False, default="Game Night")
+    availability_json = db.Column(db.Text, nullable=False, default="[]")
+    chosen_game = db.Column(db.String(120), nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    def __repr__(self):
+        return f"<ExperimentSession {self.title}>"
+
+
+class ExperimentResult(db.Model):
+    """One row per experiment session — records condition, timer, and join outcome."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    condition = db.Column(db.String(1), nullable=False)
+    experiment_session_id = db.Column(db.Integer, db.ForeignKey('experiment_session.id'), nullable=True)
+    participant_id = db.Column(db.Integer, db.ForeignKey('participant.id'), nullable=True)
+    joined = db.Column(db.Boolean, nullable=False, default=False)
+    time_to_join_ms = db.Column(db.Integer, nullable=True)
+    link_token = db.Column(db.String(64), nullable=True, unique=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    def __repr__(self):
+        return f"<ExperimentResult condition={self.condition} joined={self.joined}>"
+
+
 class GameVote(db.Model):
     """One vote per participant per session for a preferred game."""
 

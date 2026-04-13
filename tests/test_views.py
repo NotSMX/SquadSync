@@ -1569,3 +1569,711 @@ def test_join_and_vote_type_error_temp_availability(client, sample_session, app)
         p = Participant.query.filter_by(email="int@test.com").first()
         assert p is not None
         assert len(p.availabilities) == 0
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NEW TESTS — covering previously-missing lines
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── line 30: on_join SocketIO handler ────────────────────────────────────────
+
+def test_on_join_socketio(app):
+    """on_join should call join_room without raising."""
+    from unittest.mock import patch, MagicMock
+    from website.views import on_join
+
+    with app.app_context():
+        mock_sid = "fake-sid-123"
+        with patch("website.views.join_room") as mock_join_room:
+            # Simulate calling the handler directly (bypasses full SocketIO stack)
+            on_join({"session_hash": "abc123"})
+            mock_join_room.assert_called_once_with("abc123")
+
+
+# ── lines 312-313: view_session — session not found → flash + redirect ────────
+
+def test_view_session_not_found(client):
+    """GET /session/<bad-hash> should redirect to index with a flash warning."""
+    res = client.get("/session/nonexistent-hash-xyz", follow_redirects=False)
+    assert res.status_code == 302
+    assert "/" in res.headers["Location"]
+
+
+def test_view_session_not_found_flash(client):
+    """GET /session/<bad-hash> following redirect should land on index."""
+    res = client.get("/session/nonexistent-hash-xyz", follow_redirects=True)
+    assert res.status_code == 200
+
+
+# ── line 487: confirm — XHR header triggers JSON response ────────────────────
+
+def test_confirm_xhr_returns_json(client, sample_session):
+    """POSTing confirm with XHR header should return JSON {ok: True}."""
+    res = client.post(
+        f"/confirm/{sample_session['session_id']}/{sample_session['host_token']}",
+        data={"status": "yes"},
+        headers={"X-Requested-With": "XMLHttpRequest"},
+    )
+    assert res.status_code == 200
+    assert res.get_json() == {"ok": True}
+
+
+# ── lines 973-985: _reset_sequences — PostgreSQL branch ──────────────────────
+
+def test_reset_sequences_postgresql_branch(app, monkeypatch):
+    """_reset_sequences should execute setval statements on PostgreSQL dialect."""
+    from unittest.mock import MagicMock
+    from website.views import _reset_sequences
+    from website import db
+
+    mock_conn = MagicMock()
+    mock_conn.__enter__ = lambda s: mock_conn
+    mock_conn.__exit__ = MagicMock(return_value=False)
+
+    mock_engine = MagicMock()
+    mock_engine.dialect.name = "postgresql"
+    mock_engine.connect.return_value = mock_conn
+
+    # db.engine is a read-only property — override it on the class temporarily
+    monkeypatch.setattr(type(db), "engine", property(lambda self: mock_engine), raising=False)
+
+    with app.app_context():
+        _reset_sequences()
+
+    # Should have executed one setval per table (5 tables) plus a final commit
+    assert mock_conn.execute.call_count == 5
+    mock_conn.commit.assert_called_once()
+
+
+# ── line 1037: import_db — host_id update branch (sessions with host_id) ──────
+
+def test_import_db_restores_host_id(client, app):
+    """Import should correctly set host_id on sessions after participants exist."""
+    import json
+    from io import BytesIO
+
+    payload = {
+        "sessions": [
+            {
+                "id": 50, "title": "Hosted Session", "hash_id": "hosted50",
+                "host_id": 50, "final_time": None,
+                "chosen_game": None, "is_public": True, "datetime": None,
+            }
+        ],
+        "participants": [
+            {
+                "id": 50, "name": "Host Person", "email": "host@test.com",
+                "session_id": 50, "token": "tok50",
+            }
+        ],
+        "availability": [], "confirmations": [], "game_votes": [],
+    }
+
+    data = json.dumps(payload).encode()
+    res = client.post(
+        "/import-db",
+        data={"file": (BytesIO(data), "backup.json")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website.models import Session as SM
+        s = SM.query.filter_by(hash_id="hosted50").first()
+        assert s is not None
+        assert s.host_id == 50
+
+
+# ── lines 1042-1046 + 1051-1055 + 1059-1062: import_db — availability,
+#    confirmation, and game_vote rows ─────────────────────────────────────────
+
+def test_import_db_restores_availability_confirmation_gamevote(client, app):
+    """Import should restore availability, confirmation, and game_vote rows."""
+    import json
+    from io import BytesIO
+
+    payload = {
+        "sessions": [
+            {
+                "id": 60, "title": "Full Import", "hash_id": "full60",
+                "host_id": None, "final_time": None,
+                "chosen_game": None, "is_public": True, "datetime": None,
+            }
+        ],
+        "participants": [
+            {
+                "id": 60, "name": "Alice", "email": "alice60@test.com",
+                "session_id": 60, "token": "tok60",
+            }
+        ],
+        "availability": [
+            {
+                "id": 60, "session_id": 60, "participant_id": 60,
+                "start_time": "2026-01-01T10:00:00",
+                "end_time": "2026-01-01T11:00:00",
+            }
+        ],
+        "confirmations": [
+            {
+                "id": 60, "session_id": 60, "participant_id": 60,
+                "status": "yes", "created_at": "2026-01-01T10:00:00",
+            }
+        ],
+        "game_votes": [
+            {
+                "id": 60, "session_id": 60,
+                "participant_id": 60, "game_name": "Tetris",
+            }
+        ],
+    }
+
+    data = json.dumps(payload).encode()
+    client.post(
+        "/import-db",
+        data={"file": (BytesIO(data), "backup.json")},
+        content_type="multipart/form-data",
+    )
+
+    with app.app_context():
+        from website.models import Availability, Confirmation, GameVote
+        avail = Availability.query.filter_by(session_id=60).first()
+        assert avail is not None
+
+        conf = Confirmation.query.filter_by(session_id=60).first()
+        assert conf is not None
+        assert conf.status == "yes"
+
+        vote = GameVote.query.filter_by(session_id=60).first()
+        assert vote is not None
+        assert vote.game_name == "Tetris"
+
+
+# ── lines 1075-1093: _get_or_create_experiment_session — creation branch ─────
+
+def test_get_or_create_experiment_session_creates_when_absent(app):
+    """_get_or_create_experiment_session should create an ExperimentSession if none exists."""
+    from website.views import _get_or_create_experiment_session
+
+    with app.app_context():
+        from website.models import ExperimentSession
+        assert ExperimentSession.query.count() == 0
+
+        es = _get_or_create_experiment_session()
+
+        assert es is not None
+        assert es.title == "Friday Night Games"
+        assert ExperimentSession.query.count() == 1
+
+
+def test_get_or_create_experiment_session_returns_existing(app):
+    """_get_or_create_experiment_session should return existing session without creating a new one."""
+    from website.views import _get_or_create_experiment_session
+
+    with app.app_context():
+        from website.models import ExperimentSession
+        import json as _json
+
+        existing = ExperimentSession(
+            title="Existing Session",
+            availability_json=_json.dumps([]),
+            chosen_game=None,
+        )
+        from website import db as _db
+        _db.session.add(existing)
+        _db.session.commit()
+        existing_id = existing.id
+
+        es = _get_or_create_experiment_session()
+        assert es.id == existing_id
+        assert ExperimentSession.query.count() == 1
+
+
+# ── lines 1099-1165: experiment_session route — full coverage of all branches ──
+
+def _make_valid_link_token(app, condition="A"):
+    """Generate a properly signed link token using the app's SECRET_KEY."""
+    import hmac, hashlib, secrets
+    with app.app_context():
+        secret = app.config.get("SECRET_KEY", "dev")
+        nonce = secrets.token_urlsafe(18)
+        sig = hmac.new(secret.encode(), f"{condition}:{nonce}".encode(), hashlib.sha256).hexdigest()[:16]
+        return f"{condition}.{nonce}.{sig}"
+
+
+def test_experiment_session_missing_token(client):
+    """GET /experiment with no link_token should return 400."""
+    res = client.get("/experiment")
+    assert res.status_code == 400
+
+
+def test_experiment_session_invalid_token_format(client):
+    """GET /experiment with a malformed token (wrong parts) should return 404."""
+    res = client.get("/experiment?link_token=bad.token")
+    assert res.status_code == 404
+
+
+def test_experiment_session_invalid_signature(client):
+    """GET /experiment with a token whose sig doesn't match should return 404."""
+    res = client.get("/experiment?link_token=A.somenonce.badsignature1234")
+    assert res.status_code == 404
+
+
+def test_experiment_session_invalid_condition(client, app):
+    """GET /experiment with a valid sig but condition not A/B should return 404."""
+    import hmac, hashlib, secrets
+    with app.app_context():
+        secret = app.config.get("SECRET_KEY", "dev")
+        nonce = secrets.token_urlsafe(18)
+        # Condition 'X' is not A or B
+        sig = hmac.new(secret.encode(), f"X:{nonce}".encode(), hashlib.sha256).hexdigest()[:16]
+        token = f"X.{nonce}.{sig}"
+    res = client.get(f"/experiment?link_token={token}")
+    assert res.status_code == 404
+
+
+def test_experiment_session_valid_new_token(client, app):
+    """GET /experiment with a fresh valid token should render 200 and create a pending row."""
+    token = _make_valid_link_token(app, "A")
+    res = client.get(f"/experiment?link_token={token}")
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website import db as _db
+        from sqlalchemy import text
+        row = _db.session.execute(
+            text("SELECT joined FROM experiment_result WHERE link_token = :t"),
+            {"t": token}
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 0  # joined=False/0
+
+
+def test_experiment_session_already_used_token(client, app):
+    """GET /experiment with an already-joined token should return 410."""
+    token = _make_valid_link_token(app, "B")
+
+    # First open: creates the pending row
+    client.get(f"/experiment?link_token={token}")
+
+    # Mark as joined
+    with app.app_context():
+        from website import db as _db
+        from sqlalchemy import text
+        _db.session.execute(
+            text("UPDATE experiment_result SET joined=1 WHERE link_token=:t"),
+            {"t": token}
+        )
+        _db.session.commit()
+
+    # Second open: should see joined=True and return 410
+    res = client.get(f"/experiment?link_token={token}")
+    assert res.status_code == 410
+
+
+def test_experiment_session_revisit_unopened_token(client, app):
+    """GET /experiment with a valid token that has no row yet should create one and render 200."""
+    token = _make_valid_link_token(app, "B")
+    # Hit it twice without marking as joined — second call should find the row and skip INSERT
+    res1 = client.get(f"/experiment?link_token={token}")
+    res2 = client.get(f"/experiment?link_token={token}")
+    assert res1.status_code == 200
+    assert res2.status_code == 200
+
+    with app.app_context():
+        from website import db as _db
+        from sqlalchemy import text
+        rows = _db.session.execute(
+            text("SELECT COUNT(*) FROM experiment_result WHERE link_token=:t"),
+            {"t": token}
+        ).fetchone()
+        # Only one row should have been created
+        assert rows[0] == 1
+
+
+def test_experiment_session_bad_availability_json(client, app):
+    """experiment_session should gracefully handle invalid availability_json."""
+    from website.models import ExperimentSession
+    from website import db as _db
+    import json
+
+    # Create an ExperimentSession with broken JSON
+    with app.app_context():
+        es = ExperimentSession(
+            title="Broken",
+            availability_json="not-valid-json",
+            chosen_game=None,
+        )
+        _db.session.add(es)
+        _db.session.commit()
+
+    token = _make_valid_link_token(app, "A")
+    res = client.get(f"/experiment?link_token={token}")
+    assert res.status_code == 200
+
+
+# ── lines 1181-1255: experiment_join ─────────────────────────────────────────
+
+def test_experiment_join_missing_name(client, app):
+    """experiment_join with no name should redirect back without creating a participant."""
+    token = _make_valid_link_token(app, "A")
+    client.get(f"/experiment?link_token={token}")  # create pending row
+
+    res = client.post("/experiment/join", data={
+        "condition": "A",
+        "name": "",
+        "email": "x@x.com",
+        "link_token": token,
+        "time_to_join_ms": "3000",
+    })
+    # The redirect goes back to experiment_session which requires a valid token;
+    # we just verify the redirect itself fires — not that the destination renders.
+    assert res.status_code == 302
+
+
+def test_experiment_join_with_link_token(client, app):
+    """experiment_join with a valid link_token should update the pending result row."""
+    token = _make_valid_link_token(app, "A")
+    client.get(f"/experiment?link_token={token}")  # creates pending row
+
+    res = client.post("/experiment/join", data={
+        "condition": "A",
+        "name": "Test User",
+        "email": "test@test.com",
+        "game_name": "Minecraft",
+        "link_token": token,
+        "time_to_join_ms": "5000",
+        "temp_availability": "[]",
+    }, follow_redirects=True)
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website import db as _db
+        from sqlalchemy import text
+        row = _db.session.execute(
+            text("SELECT joined FROM experiment_result WHERE link_token=:t"),
+            {"t": token}
+        ).fetchone()
+        assert row[0] == 1  # joined=True
+
+
+def test_experiment_join_without_link_token(client, app):
+    """experiment_join without a link_token should create a new ExperimentResult row."""
+    res = client.post("/experiment/join", data={
+        "condition": "B",
+        "name": "No Token User",
+        "email": "notoken@test.com",
+        "time_to_join_ms": "2000",
+        "temp_availability": "[]",
+    }, follow_redirects=True)
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website.models import ExperimentResult
+        result = ExperimentResult.query.filter_by(condition="B").first()
+        assert result is not None
+        assert result.joined is True
+
+
+def test_experiment_join_creates_experiment_session_when_absent(client, app):
+    """experiment_join should create __experiment__ Session if it doesn't exist."""
+    res = client.post("/experiment/join", data={
+        "condition": "A",
+        "name": "Bootstrap User",
+        "email": "boot@test.com",
+        "temp_availability": "[]",
+    }, follow_redirects=True)
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website.models import Session as SM
+        exp = SM.query.filter_by(title="__experiment__").first()
+        assert exp is not None
+
+
+def test_experiment_join_with_temp_availability(client, app):
+    """experiment_join with valid temp_availability blocks should save them."""
+    from datetime import datetime, timedelta
+    start = datetime.now()
+    end = start + timedelta(hours=2)
+    temp_avail = f'[{{"start":"{start.isoformat()}","end":"{end.isoformat()}"}}]'
+
+    res = client.post("/experiment/join", data={
+        "condition": "A",
+        "name": "Avail User",
+        "email": "avail@test.com",
+        "temp_availability": temp_avail,
+    }, follow_redirects=True)
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website.models import Participant, Availability
+        p = Participant.query.filter_by(email="avail@test.com").first()
+        assert p is not None
+        assert len(p.availabilities) == 1
+
+
+def test_experiment_join_with_game_vote(client, app):
+    """experiment_join with a game suggestion should save a GameVote."""
+    res = client.post("/experiment/join", data={
+        "condition": "A",
+        "name": "Voter",
+        "email": "voter@test.com",
+        "game_name": "Among Us",
+        "temp_availability": "[]",
+    }, follow_redirects=True)
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website.models import Participant, GameVote
+        p = Participant.query.filter_by(email="voter@test.com").first()
+        assert p is not None
+        vote = GameVote.query.filter_by(participant_id=p.id).first()
+        assert vote is not None
+        assert vote.game_name == "Among Us"
+
+
+# ── lines 1261-1282: experiment_no_join ──────────────────────────────────────
+
+def test_experiment_no_join_with_link_token(client, app):
+    """experiment_no_join with a valid link_token should update elapsed time on the row."""
+    token = _make_valid_link_token(app, "A")
+    client.get(f"/experiment?link_token={token}")  # creates pending row
+
+    res = client.post("/experiment/no_join", data={
+        "link_token": token,
+        "time_to_join_ms": "12000",
+        "condition": "A",
+    })
+    assert res.status_code == 200
+    assert res.get_json()["ok"] is True
+
+    with app.app_context():
+        from website import db as _db
+        from sqlalchemy import text
+        row = _db.session.execute(
+            text("SELECT time_to_join_ms FROM experiment_result WHERE link_token=:t"),
+            {"t": token}
+        ).fetchone()
+        assert row[0] == 12000
+
+
+def test_experiment_no_join_without_link_token(client, app):
+    """experiment_no_join without a token should create a fallback ExperimentResult row."""
+    # Ensure an ExperimentSession exists so the fallback can reference it
+    from website.views import _get_or_create_experiment_session
+    with app.app_context():
+        _get_or_create_experiment_session()
+
+    res = client.post("/experiment/no_join", data={
+        "condition": "B",
+        "time_to_join_ms": "8000",
+    })
+    assert res.status_code == 200
+    assert res.get_json()["ok"] is True
+
+    with app.app_context():
+        from website.models import ExperimentResult
+        result = ExperimentResult.query.filter_by(joined=False).first()
+        assert result is not None
+
+
+# ── lines 1288-1309: experiment_export ───────────────────────────────────────
+
+def test_experiment_export_csv(client, app):
+    """GET /experiment/export should return a CSV file by default."""
+    # Seed one result row
+    with app.app_context():
+        from website.models import ExperimentResult
+        from website import db as _db
+        _db.session.add(ExperimentResult(
+            condition="A", experiment_session_id=None,
+            participant_id=None, joined=False, time_to_join_ms=999,
+        ))
+        _db.session.commit()
+
+    res = client.get("/experiment/export")
+    assert res.status_code == 200
+    assert b"condition" in res.data  # CSV header row
+    assert res.content_type.startswith("text/csv")
+
+
+def test_experiment_export_json(client, app):
+    """GET /experiment/export?format=json should return a JSON file."""
+    with app.app_context():
+        from website.models import ExperimentResult
+        from website import db as _db
+        _db.session.add(ExperimentResult(
+            condition="B", experiment_session_id=None,
+            participant_id=None, joined=True, time_to_join_ms=500,
+        ))
+        _db.session.commit()
+
+    res = client.get("/experiment/export?format=json")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert isinstance(data, list)
+    assert data[0]["condition"] in ("A", "B")
+
+
+# ── lines 1316-1323: experiment_reset_participants ────────────────────────────
+
+def test_experiment_reset_participants(client, app):
+    """POST /experiment/reset_participants should clear participants but keep result rows."""
+    from website.views import _get_or_create_experiment_session
+    with app.app_context():
+        _get_or_create_experiment_session()
+        from website.models import Session as SM, Participant, ExperimentResult
+        from website import db as _db
+
+        exp_s = SM(title="__experiment__", is_public=False)
+        _db.session.add(exp_s)
+        _db.session.commit()
+
+        p = Participant(name="Exp P", email="expp@test.com", session_id=exp_s.id)
+        _db.session.add(p)
+        _db.session.commit()
+
+        _db.session.add(ExperimentResult(
+            condition="A", experiment_session_id=None,
+            participant_id=p.id, joined=True, time_to_join_ms=100,
+        ))
+        _db.session.commit()
+
+    res = client.post("/experiment/reset_participants", follow_redirects=True)
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website.models import Participant, ExperimentResult
+        assert Participant.query.filter_by(email="expp@test.com").count() == 0
+        assert ExperimentResult.query.count() > 0  # results kept
+
+
+def test_experiment_reset_participants_no_exp_session(client, app):
+    """reset_participants should not crash when __experiment__ session doesn't exist."""
+    res = client.post("/experiment/reset_participants", follow_redirects=True)
+    assert res.status_code == 200
+
+
+# ── lines 1329-1338: experiment_reset_all ────────────────────────────────────
+
+def test_experiment_reset_all(client, app):
+    """POST /experiment/reset_all should delete participants AND all result rows."""
+    from website.views import _get_or_create_experiment_session
+    with app.app_context():
+        _get_or_create_experiment_session()
+        from website.models import Session as SM, Participant, ExperimentResult
+        from website import db as _db
+
+        exp_s = SM(title="__experiment__", is_public=False)
+        _db.session.add(exp_s)
+        _db.session.commit()
+
+        p = Participant(name="Full Reset P", email="fr@test.com", session_id=exp_s.id)
+        _db.session.add(p)
+        _db.session.commit()
+
+        _db.session.add(ExperimentResult(
+            condition="A", experiment_session_id=None,
+            participant_id=p.id, joined=True, time_to_join_ms=200,
+        ))
+        _db.session.commit()
+
+    res = client.post("/experiment/reset_all", follow_redirects=True)
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website.models import ExperimentResult
+        assert ExperimentResult.query.count() == 0
+
+
+def test_experiment_reset_all_no_exp_session(client, app):
+    """reset_all should not crash when __experiment__ session doesn't exist."""
+    with app.app_context():
+        from website.models import ExperimentResult
+        from website import db as _db
+        _db.session.add(ExperimentResult(
+            condition="B", experiment_session_id=None,
+            participant_id=None, joined=False, time_to_join_ms=0,
+        ))
+        _db.session.commit()
+
+    res = client.post("/experiment/reset_all", follow_redirects=True)
+    assert res.status_code == 200
+
+    with app.app_context():
+        from website.models import ExperimentResult
+        assert ExperimentResult.query.count() == 0
+
+
+# ── lines 1344-1346: experiment_results endpoint ─────────────────────────────
+
+def test_experiment_results_endpoint(client, app):
+    """GET /experiment/results should return a JSON list."""
+    with app.app_context():
+        from website.models import ExperimentResult
+        from website import db as _db
+        _db.session.add(ExperimentResult(
+            condition="A", experiment_session_id=None,
+            participant_id=None, joined=True, time_to_join_ms=1234,
+        ))
+        _db.session.commit()
+
+    res = client.get("/experiment/results")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    assert "condition" in data[0]
+    assert "joined" in data[0]
+
+
+# ── lines 1356-1368: experiment_generate_link ────────────────────────────────
+
+def test_experiment_generate_link_condition_a(client):
+    """POST /experiment/generate_link with condition A should return a signed token."""
+    res = client.post(
+        "/experiment/generate_link",
+        json={"condition": "A"},
+        content_type="application/json",
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["condition"] == "A"
+    assert len(data["link_token"].split(".")) == 3
+
+
+def test_experiment_generate_link_condition_b(client):
+    """POST /experiment/generate_link with condition B should return a signed token."""
+    res = client.post(
+        "/experiment/generate_link",
+        json={"condition": "B"},
+        content_type="application/json",
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["condition"] == "B"
+
+
+def test_experiment_generate_link_invalid_condition_defaults_to_a(client):
+    """POST /experiment/generate_link with an invalid condition should default to A."""
+    res = client.post(
+        "/experiment/generate_link",
+        json={"condition": "Z"},
+        content_type="application/json",
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["condition"] == "A"
+
+
+def test_generated_link_token_is_valid_for_experiment(client, app):
+    """A token generated by generate_link should be accepted by the experiment route."""
+    gen_res = client.post(
+        "/experiment/generate_link",
+        json={"condition": "A"},
+        content_type="application/json",
+    )
+    token = gen_res.get_json()["link_token"]
+
+    exp_res = client.get(f"/experiment?link_token={token}")
+    assert exp_res.status_code == 200

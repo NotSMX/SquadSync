@@ -2277,3 +2277,52 @@ def test_generated_link_token_is_valid_for_experiment(client, app):
 
     exp_res = client.get(f"/experiment?link_token={token}")
     assert exp_res.status_code == 200
+
+
+def test_submit_feedback_success(client, app, monkeypatch):
+    """Submitting valid feedback should save to DB and trigger email."""
+    # Mock the email sender so we don't try to actually send during view test
+    monkeypatch.setattr("website.views.notify_feedback_submitted", lambda data: (True, None))
+    
+    res = client.post("/submit-feedback", data={
+        "ease_of_use": "4",
+        "improvement": "Add more games to the dropdown",
+        "accomplished_goal": "Yes",
+        "return_likelihood": "5",
+        "recommend_likelihood": "5",
+        "additional_comments": "Thanks!"
+    }, follow_redirects=True)
+    
+    assert res.status_code == 200
+    assert b"Thank you for your feedback" in res.data
+    
+    with app.app_context():
+        from website.models import Feedback
+        fb = Feedback.query.first()
+        assert fb is not None
+        assert fb.ease_of_use == 4
+        assert fb.improvement == "Add more games to the dropdown"
+
+
+def test_submit_feedback_invalid_integers(client, app, monkeypatch):
+    """Submitting non-integers for scale questions should safely store None."""
+    monkeypatch.setattr("website.views.notify_feedback_submitted", lambda data: (True, None))
+    
+    res = client.post("/submit-feedback", data={
+        "ease_of_use": "not-a-number",
+        "improvement": "Fix the numbers",
+        "accomplished_goal": "No",
+        "return_likelihood": "",
+        "recommend_likelihood": "None",
+        "additional_comments": ""
+    }, follow_redirects=True)
+    
+    assert res.status_code == 200
+    
+    with app.app_context():
+        from website.models import Feedback
+        fb = Feedback.query.first()
+        assert fb is not None
+        assert fb.ease_of_use is None
+        assert fb.return_likelihood is None
+        assert fb.recommend_likelihood is None

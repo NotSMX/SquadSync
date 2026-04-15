@@ -175,13 +175,102 @@
   </div>
 </div>
 
+<div class="modal fade" id="feedbackModal" tabindex="-1" aria-labelledby="feedbackModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    
+    <form action="/submit-feedback" method="POST" class="modal-content text-start" style="background-color: #222; border: 1px solid #444; color: #fff;">
+      
+      <div class="modal-header" style="border-bottom: 1px solid #444;">
+        <h5 class="modal-title fw-bold" id="feedbackModalLabel">We'd love your feedback!</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      
+      <div class="modal-body">
+          
+        <div class="mb-4">
+          <label class="form-label small fw-bold mb-2">How easy was it to use the app?</label>
+          <select name="ease_of_use" class="form-select" style="background-color: #333; color: white; border: 1px solid #555;" required>
+              <option value="" disabled selected>Select a rating...</option>
+              <option value="1">1 - Very Hard</option>
+              <option value="2">2 - Hard</option>
+              <option value="3">3 - Neutral</option>
+              <option value="4">4 - Easy</option>
+              <option value="5">5 - Very Easy</option>
+          </select>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label small fw-bold mb-2">What is one thing you would change about SynQ to make it better?</label>
+          <textarea name="improvement" class="form-control" rows="3" placeholder="Tell us your thoughts..." style="background-color: #333; color: white; border: 1px solid #555;" required></textarea>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label small fw-bold mb-2">Were you able to accomplish what you came to do today?</label>
+          <div class="d-flex gap-4">
+              <div class="form-check">
+                  <input class="form-check-input" type="radio" name="accomplished_goal" id="goalYes" value="Yes" required>
+                  <label class="form-check-label" for="goalYes">Yes</label>
+              </div>
+              <div class="form-check">
+                  <input class="form-check-input" type="radio" name="accomplished_goal" id="goalNo" value="No">
+                  <label class="form-check-label" for="goalNo">No</label>
+              </div>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label small fw-bold mb-2">How likely are you to return to SynQ in the future?</label>
+          <select name="return_likelihood" class="form-select" style="background-color: #333; color: white; border: 1px solid #555;" required>
+              <option value="" disabled selected>Select a rating...</option>
+              <option value="1">1 - Very Unlikely</option>
+              <option value="2">2 - Unlikely</option>
+              <option value="3">3 - Neutral</option>
+              <option value="4">4 - Likely</option>
+              <option value="5">5 - Very Likely</option>
+          </select>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label small fw-bold mb-2">How likely are you to recommend this app to a friend?</label>
+          <select name="recommend_likelihood" class="form-select" style="background-color: #333; color: white; border: 1px solid #555;" required>
+              <option value="" disabled selected>Select a rating...</option>
+              <option value="1">1 - Very Unlikely</option>
+              <option value="2">2 - Unlikely</option>
+              <option value="3">3 - Neutral</option>
+              <option value="4">4 - Likely</option>
+              <option value="5">5 - Very Likely</option>
+          </select>
+        </div>
+      
+        <div class="mb-4">
+          <label class="form-label small fw-bold mb-2">Anything else you would like to add? (Optional)</label>
+          <textarea name="additional_comments" class="form-control" rows="2" placeholder="Tell us your thoughts..." style="background-color: #333; color: white; border: 1px solid #555;"></textarea>
+        </div>
+      
+      </div>
+
+      
+      <div class="modal-footer" style="border-top: 1px solid #444;">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Submit Feedback</button>
+      </div>
+
+    </form>
+  </div>
+</div>
+
 <!-- Footer trigger (always accessible) -->
-<footer class="footer text-center mt-2">
-  <button class="btn btn-link text-decoration-none"
-          data-bs-toggle="modal"
-          data-bs-target="#policyModal">
-    Disclosure & Privacy Policy
-  </button>
+<footer class="footer text-center mt-2 d-flex justify-content-center gap-3">
+    <button class="btn btn-link text-decoration-none"
+            data-bs-toggle="modal"
+            data-bs-target="#feedbackModal">
+        Give Feedback
+    </button>
+    <button class="btn btn-link text-decoration-none"
+            data-bs-toggle="modal"
+            data-bs-target="#policyModal">
+        Disclosure & Privacy Policy
+    </button>
 </footer>
 
 </body>

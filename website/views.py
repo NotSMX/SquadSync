@@ -18,8 +18,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from website import db, socketio
-from website.models import Confirmation, Participant, Session, Availability, GameVote
-from website.utils import notify_final_time, notify_personal_link
+from website.models import Confirmation, Participant, Session, Availability, GameVote, Feedback
+from website.utils import notify_final_time, notify_personal_link, notify_feedback_submitted
 
 from gevent import spawn
 
@@ -1392,3 +1392,40 @@ def cleanup_db():
     db.session.commit()
     _reset_sequences()
     return "Done! Junk sessions deleted and sequences fixed."
+
+@main.route("/submit-feedback", methods=["POST"])
+def submit_feedback():
+    """Handle feedback form submission from the footer modal."""
+    ease_of_use = request.form.get("ease_of_use")
+    improvement = request.form.get("improvement")
+    accomplished_goal = request.form.get("accomplished_goal")
+    return_likelihood = request.form.get("return_likelihood")
+    recommend_likelihood = request.form.get("recommend_likelihood")
+    additional_comments = request.form.get("additional_comments")
+
+    # 1. Save to Database
+    feedback = Feedback(
+        ease_of_use=int(ease_of_use) if ease_of_use and ease_of_use.isdigit() else None,
+        improvement=improvement,
+        accomplished_goal=accomplished_goal,
+        return_likelihood=int(return_likelihood) if return_likelihood and return_likelihood.isdigit() else None,
+        recommend_likelihood=int(recommend_likelihood) if recommend_likelihood and recommend_likelihood.isdigit() else None,
+        additional_comments=additional_comments
+    )   
+    db.session.add(feedback)
+    db.session.commit()
+
+    # 2. Send Email
+    feedback_data = {
+        "ease_of_use": ease_of_use,
+        "improvement": improvement,
+        "accomplished_goal": accomplished_goal,
+        "return_likelihood": return_likelihood,
+        "recommend_likelihood": recommend_likelihood,
+        "additional_comments": additional_comments
+    }
+    spawn(notify_feedback_submitted, feedback_data)
+
+    flash("Thank you for your feedback! It helps us improve SynQ.", "success")
+    
+    return redirect(request.referrer or url_for("main.index"))

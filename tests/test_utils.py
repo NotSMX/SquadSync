@@ -150,3 +150,55 @@ def test_notify_skips_no_email(monkeypatch):
 
     assert sent_count == 0
     assert not failed
+
+
+def test_notify_feedback_no_credentials(flask_app):
+    """Should return False if MAIL_USERNAME/PASSWORD not configured."""
+    from website.utils import notify_feedback_submitted
+    flask_app.config.update({"MAIL_USERNAME": None, "MAIL_PASSWORD": None})
+    with flask_app.app_context():
+        success, error = notify_feedback_submitted({})
+        assert success is False
+        assert error == "Mail not configured"
+
+def test_notify_feedback_sends_email(monkeypatch):
+    """Should attempt to send the feedback email."""
+    from website.utils import notify_feedback_submitted
+    flask_app = _make_app_with_mail()
+    
+    sent = []
+    monkeypatch.setattr("website.utils.mail.send", lambda msg: sent.append(msg))
+    
+    feedback_data = {
+        "ease_of_use": "5",
+        "improvement": "Dark mode",
+        "accomplished_goal": "Yes",
+        "return_likelihood": "4",
+        "recommend_likelihood": "5",
+        "additional_comments": "Nothing else!"
+    }
+    
+    with flask_app.app_context():
+        success, error = notify_feedback_submitted(feedback_data)
+        
+    assert success is True
+    assert error is None
+    assert len(sent) == 1
+    assert "SynQ - New User Feedback" in sent[0].subject
+    assert "Dark mode" in sent[0].body
+
+def test_notify_feedback_handles_error(monkeypatch):
+    """Should record failures when mail.send raises an exception."""
+    from website.utils import notify_feedback_submitted
+    flask_app = _make_app_with_mail()
+    
+    def mock_send_fail(msg):
+        raise RuntimeError("SMTP feedback error")
+        
+    monkeypatch.setattr("website.utils.mail.send", mock_send_fail)
+    
+    with flask_app.app_context():
+        success, error = notify_feedback_submitted({})
+        
+    assert success is False
+    assert error == "SMTP feedback error"

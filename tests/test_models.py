@@ -132,3 +132,24 @@ def test_session_host_relationship(app):
         db.session.commit()
 
         assert s.host.name == "Host"
+
+def test_feedback_model_creation(app):
+    """Test creating a Feedback entry and its __repr__."""
+    from website.models import Feedback
+    
+    with app.app_context():
+        fb = Feedback(
+            ease_of_use=5,
+            improvement="Make it load faster",
+            accomplished_goal="Yes",
+            return_likelihood=4,
+            recommend_likelihood=5,
+            additional_comments="Great job so far!"
+        )
+        db.session.add(fb)
+        db.session.commit()
+
+        assert fb.id is not None
+        assert fb.created_at is not None
+        assert fb.ease_of_use == 5
+        assert repr(fb) == f"<Feedback {fb.id}>"

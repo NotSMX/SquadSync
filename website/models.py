@@ -178,3 +178,22 @@ class GameVote(db.Model):
     def __repr__(self):
         """Return string representation."""
         return f"<GameVote {self.game_name}>"
+    
+class Feedback(db.Model):
+    """User feedback submitted via the footer form."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    ease_of_use = db.Column(db.Integer)  # 1-5 scale
+    improvement = db.Column(db.Text)  #Open-Ended
+    accomplished_goal = db.Column(db.String(10))  # Yes/No
+    return_likelihood = db.Column(db.Integer)  # 1-5 scale
+    recommend_likelihood = db.Column(db.Integer)  # 1-5 scale
+    additional_comments = db.Column(db.Text) #Open-Ended
+    
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    def __repr__(self):
+        return f"<Feedback {self.id}>"

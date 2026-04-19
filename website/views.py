@@ -103,6 +103,24 @@ def _ensure_game_election_schema():
             ("availability", "start_time", "DATETIME"),
             ("availability", "end_time", "DATETIME"),
             ("experiment_result", "link_token", "VARCHAR(64)"),
+            ("experiment_result", "click_count", "INTEGER"),
+            ("experiment_result", "scroll_depth", "REAL"),
+            ("experiment_result", "first_interaction_ms", "INTEGER"),
+            ("experiment_result", "used_calendar", "INTEGER"),
+            ("experiment_result", "typed_game", "INTEGER"),
+            ("experiment_result", "calendar_block_count", "INTEGER"),
+            ("experiment_result", "calendar_section_ms", "INTEGER"),
+            ("experiment_result", "game_section_ms", "INTEGER"),
+            ("experiment_result", "time_to_calendar_ms", "INTEGER"),
+            ("experiment_result", "time_to_game_ms", "INTEGER"),
+            ("experiment_result", "rage_click_count", "INTEGER"),
+            ("experiment_result", "form_focus_ms", "INTEGER"),
+            ("experiment_result", "nudge_hover", "INTEGER"),
+            ("experiment_result", "ease_of_use", "INTEGER"),
+            ("experiment_result", "layout_clarity", "INTEGER"),
+            ("experiment_result", "noticed_first", "VARCHAR(20)"),
+            ("experiment_result", "real_use_likelihood", "INTEGER"),
+            ("experiment_result", "feedback_text", "TEXT"),
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))
@@ -1071,25 +1089,64 @@ def import_db():
 # ── EXPERIMENT ROUTES ────────────────────────────────────────────────────────
 
 def _get_or_create_experiment_session():
-    """Return the single ExperimentSession template, creating it if needed."""
-    from website.models import ExperimentSession  # noqa: PLC0415
-    import json as _json  # noqa: PLC0415
-    from datetime import timezone, timedelta  # noqa: PLC0415
+    from website.models import ExperimentSession
+    import json as _json
+    import random
+    from datetime import datetime, timezone, timedelta
+
     es = ExperimentSession.query.first()
-    if not es:
-        now = datetime.now(timezone.utc).replace(hour=20, minute=0, second=0, microsecond=0)
-        blocks = []
-        for day_offset in [1, 2, 4, 5]:
-            day = now + timedelta(days=day_offset)
-            blocks.append({"start": day.replace(hour=18).isoformat(), "end": day.replace(hour=21).isoformat()})
-            blocks.append({"start": day.replace(hour=20).isoformat(), "end": day.replace(hour=22).isoformat()})
-        es = ExperimentSession(
-            title="Friday Night Games",
-            availability_json=_json.dumps(blocks),
-            chosen_game=None,
-        )
-        db.session.add(es)
-        db.session.commit()
+    if es:
+        return es
+
+    # Start from today, end June 1st
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    end_date = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+    people = ["Alex", "Jordan", "Sam", "Taylor"]
+    
+    # Common gaming windows (Start Hour, End Hour)
+    base_slots = [
+        (16, 18), (17, 19), (18, 20), 
+        (19, 21), (20, 22), (21, 23)
+    ]
+
+    blocks = []
+    current_day = now
+
+    while current_day < end_date:
+        # 1. Decide how many sessions happen this day (0 to 2 for realism)
+        # We don't want people gaming every single day, maybe 70% chance of sessions
+        if random.random() > 0.3:
+            num_sessions = random.randint(1, 2)
+            daily_slots = random.sample(base_slots, num_sessions)
+
+            for start_h, end_h in daily_slots:
+                start_dt = current_day.replace(hour=start_h)
+                end_dt = current_day.replace(hour=end_h)
+
+                # 2. Pick a group (2 to 4 people) who are "available" at this time
+                # This creates the "overlap" the users need to find!
+                group_size = random.choice([2, 3, 4])
+                participants = random.sample(people, group_size)
+
+                for person in participants:
+                    blocks.append({
+                        "person": person,
+                        "start": start_dt.isoformat(),
+                        "end": end_dt.isoformat()
+                    })
+
+        current_day += timedelta(days=1)
+
+    es = ExperimentSession(
+        title="Friday Night Games",
+        availability_json=_json.dumps(blocks),
+        chosen_game=None,
+    )
+
+    db.session.add(es)
+    db.session.commit()
+
     return es
 
 
@@ -1156,11 +1213,17 @@ def experiment_session():
     except (ValueError, TypeError):
         raw_blocks = []
 
-    grouped_json = {
-        "Alex":   [{"start": b["start"], "end": b["end"]} for b in raw_blocks[:3]],
-        "Jordan": [{"start": b["start"], "end": b["end"]} for b in raw_blocks[3:]],
-    }
-    fake_tally = [["Valorant", 2], ["Minecraft", 1]]
+    people = ["Alex", "Jordan", "Sam", "Taylor"]
+    grouped_json = {p: [] for p in people}
+
+    for b in raw_blocks:
+        person = b.get("person")
+        if person in grouped_json:
+            grouped_json[person].append({
+                "start": b["start"],
+                "end": b["end"]
+            })
+    fake_tally = [["Valorant", 2], ["Minecraft", 1], ["Overwatch", 1], ["Apex Legends", 1]]
 
     return render_template(
         "experiment_session.html",
@@ -1180,6 +1243,7 @@ def experiment_join():
     """Record a join event. Creates participant in __experiment__ session."""
     from website.models import ExperimentSession, ExperimentResult  # noqa: PLC0415
 
+    _ensure_game_election_schema()
     es = _get_or_create_experiment_session()
     condition = request.form.get("condition", "A").upper()
     time_to_join_ms = request.form.get("time_to_join_ms", type=int)
@@ -1187,6 +1251,19 @@ def experiment_join():
     email = (request.form.get("email") or "").strip()
     game_name = (request.form.get("game_name") or "").strip()
     temp_availability_raw = request.form.get("temp_availability", "[]")
+    click_count = request.form.get("click_count", type=int, default=0)
+    scroll_depth = request.form.get("scroll_depth", type=float, default=0.0)
+    first_interaction_ms = request.form.get("first_interaction_ms", type=int, default=-1)
+    used_calendar = request.form.get("used_calendar", type=int, default=0)
+    typed_game = request.form.get("typed_game", type=int, default=0)
+    calendar_block_count = request.form.get("calendar_block_count", type=int, default=0)
+    calendar_section_ms = request.form.get("calendar_section_ms", type=int, default=0)
+    game_section_ms = request.form.get("game_section_ms", type=int, default=0)
+    time_to_calendar_ms = request.form.get("time_to_calendar_ms", type=int)
+    time_to_game_ms = request.form.get("time_to_game_ms", type=int)
+    rage_click_count = request.form.get("rage_click_count", type=int, default=0)
+    form_focus_ms = request.form.get("form_focus_ms", type=int, default=0)
+    nudge_hover = request.form.get("nudge_hover", type=int, default=0)
 
     if not name:
         flash("Please enter your name.", "warning")
@@ -1238,8 +1315,44 @@ def experiment_join():
         ).fetchone()
         if result_row:
             db.session.execute(
-                text("UPDATE experiment_result SET participant_id=:pid, joined=true, time_to_join_ms=:ms WHERE id=:rid"),
-                {"pid": participant.id, "ms": time_to_join_ms, "rid": result_row[0]}
+                text("""
+                    UPDATE experiment_result 
+                    SET participant_id = :pid, 
+                        joined = true, 
+                        time_to_join_ms = :ms,
+                        click_count = :clicks,
+                        scroll_depth = :scroll,
+                        first_interaction_ms = :first_int,
+                        used_calendar = :used_cal,
+                        typed_game = :typed_g,
+                        calendar_block_count = :cal_blocks,
+                        calendar_section_ms = :cal_ms,
+                        game_section_ms = :game_ms,
+                        time_to_calendar_ms = :ttcal,
+                        time_to_game_ms = :ttgame,
+                        rage_click_count = :rage,
+                        form_focus_ms = :focus_ms,
+                        nudge_hover = :nudge
+                    WHERE id = :rid
+                """),
+                {
+                    "pid": participant.id, 
+                    "ms": time_to_join_ms, 
+                    "clicks": click_count,
+                    "scroll": scroll_depth,
+                    "first_int": first_interaction_ms,
+                    "used_cal": bool(used_calendar),
+                    "typed_g": bool(typed_game),
+                    "cal_blocks": calendar_block_count,
+                    "cal_ms": calendar_section_ms,
+                    "game_ms": game_section_ms,
+                    "ttcal": time_to_calendar_ms if time_to_calendar_ms and time_to_calendar_ms >= 0 else None,
+                    "ttgame": time_to_game_ms if time_to_game_ms and time_to_game_ms >= 0 else None,
+                    "rage": rage_click_count,
+                    "focus_ms": form_focus_ms,
+                    "nudge": bool(nudge_hover),
+                    "rid": result_row[0]
+                }
             )
     else:
         db.session.add(ExperimentResult(
@@ -1248,12 +1361,35 @@ def experiment_join():
             participant_id=participant.id,
             joined=True,
             time_to_join_ms=time_to_join_ms,
+            click_count=click_count,
+            scroll_depth=scroll_depth, 
+            first_interaction_ms=first_interaction_ms,
+            used_calendar=used_calendar,
+            typed_game=typed_game,
+            calendar_block_count=calendar_block_count,
+            calendar_section_ms=calendar_section_ms,
+            game_section_ms=game_section_ms,
+            time_to_calendar_ms=time_to_calendar_ms if time_to_calendar_ms and time_to_calendar_ms >= 0 else None,
+            time_to_game_ms=time_to_game_ms if time_to_game_ms and time_to_game_ms >= 0 else None,
+            rage_click_count=rage_click_count,
+            form_focus_ms=form_focus_ms,
+            nudge_hover=bool(nudge_hover),
         ))
     db.session.commit()
+    
+    result_id = request.form.get("result_id")
+    if not result_id:
+        # fallback lookup
+        result = ExperimentResult.query.filter_by(participant_id=participant.id).first()
+        result_id = result.id if result else None
 
     flash("Thanks! Your response has been recorded.", "success")
-    return redirect(url_for("main.index"))
 
+    return redirect(url_for(
+        "main.experiment_feedback",
+        condition=condition,
+        result_id = result.id if result else None
+    ))
 
 @main.route("/experiment/no_join", methods=["POST"])
 def experiment_no_join():
@@ -1261,11 +1397,57 @@ def experiment_no_join():
     from website.models import ExperimentSession, ExperimentResult  # noqa: PLC0415
     link_token = request.form.get("link_token", "").strip()
     elapsed = request.form.get("time_to_join_ms", type=int)
+    click_count = request.form.get("click_count", type=int, default=0)
+    scroll_depth = request.form.get("scroll_depth", type=float, default=0.0)
+    first_interaction_ms = request.form.get("first_interaction_ms", type=int)
+    used_calendar = request.form.get("used_calendar", type=int, default=0)
+    typed_game = request.form.get("typed_game", type=int, default=0)
+    calendar_block_count = request.form.get("calendar_block_count", type=int, default=0)
+    calendar_section_ms = request.form.get("calendar_section_ms", type=int, default=0)
+    game_section_ms = request.form.get("game_section_ms", type=int, default=0)
+    time_to_calendar_ms = request.form.get("time_to_calendar_ms", type=int)
+    time_to_game_ms = request.form.get("time_to_game_ms", type=int)
+    rage_click_count = request.form.get("rage_click_count", type=int, default=0)
+    form_focus_ms = request.form.get("form_focus_ms", type=int, default=0)
+    nudge_hover = request.form.get("nudge_hover", type=int, default=0)
 
     if link_token:
         db.session.execute(
-            text("UPDATE experiment_result SET time_to_join_ms=:ms WHERE link_token=:token AND joined=false"),
-            {"ms": elapsed, "token": link_token}
+            text("""
+                UPDATE experiment_result
+                SET time_to_join_ms      = :ms,
+                    click_count          = :clicks,
+                    scroll_depth         = :scroll,
+                    first_interaction_ms = :first_int,
+                    used_calendar        = :used_cal,
+                    typed_game           = :typed_g,
+                    calendar_block_count = :cal_blocks,
+                    calendar_section_ms  = :cal_ms,
+                    game_section_ms      = :game_ms,
+                    time_to_calendar_ms  = :ttcal,
+                    time_to_game_ms      = :ttgame,
+                    rage_click_count     = :rage,
+                    form_focus_ms        = :focus_ms,
+                    nudge_hover          = :nudge
+                WHERE link_token = :token AND joined = false
+            """),
+            {
+                "ms": elapsed,
+                "clicks": click_count,
+                "scroll": scroll_depth,
+                "first_int": first_interaction_ms if first_interaction_ms and first_interaction_ms >= 0 else None,
+                "used_cal": bool(used_calendar),
+                "typed_g": bool(typed_game),
+                "cal_blocks": calendar_block_count,
+                "cal_ms": calendar_section_ms,
+                "game_ms": game_section_ms,
+                "ttcal": time_to_calendar_ms if time_to_calendar_ms and time_to_calendar_ms >= 0 else None,
+                "ttgame": time_to_game_ms if time_to_game_ms and time_to_game_ms >= 0 else None,
+                "rage": rage_click_count,
+                "focus_ms": form_focus_ms,
+                "nudge": bool(nudge_hover),
+                "token": link_token,
+            }
         )
         db.session.commit()
     else:
@@ -1277,6 +1459,19 @@ def experiment_no_join():
             participant_id=None,
             joined=False,
             time_to_join_ms=elapsed,
+            click_count=click_count,
+            scroll_depth=scroll_depth,
+            first_interaction_ms=first_interaction_ms if first_interaction_ms and first_interaction_ms >= 0 else None,
+            used_calendar=bool(used_calendar),
+            typed_game=bool(typed_game),
+            calendar_block_count=calendar_block_count,
+            calendar_section_ms=calendar_section_ms,
+            game_section_ms=game_section_ms,
+            time_to_calendar_ms=time_to_calendar_ms if time_to_calendar_ms and time_to_calendar_ms >= 0 else None,
+            time_to_game_ms=time_to_game_ms if time_to_game_ms and time_to_game_ms >= 0 else None,
+            rage_click_count=rage_click_count,
+            form_focus_ms=form_focus_ms,
+            nudge_hover=bool(nudge_hover),
         ))
         db.session.commit()
     return jsonify({"ok": True})
@@ -1293,19 +1488,68 @@ def experiment_export():
     results = ExperimentResult.query.order_by(ExperimentResult.created_at).all()
 
     if fmt == "json":
-        data = [{"id": r.id, "condition": r.condition, "participant_id": r.participant_id,
-                 "joined": r.joined, "time_to_join_ms": r.time_to_join_ms,
-                 "created_at": r.created_at.isoformat() if r.created_at else None}
-                for r in results]
+        data = [{
+            "id": r.id,
+            "condition": r.condition,
+            "participant_id": r.participant_id,
+            "joined": r.joined,
+            "time_to_join_ms": r.time_to_join_ms,
+            "click_count": r.click_count,
+            "scroll_depth": r.scroll_depth,
+            "first_interaction_ms": r.first_interaction_ms,
+            "used_calendar": r.used_calendar,
+            "typed_game": r.typed_game,
+            "calendar_block_count": getattr(r, 'calendar_block_count', None),
+            "calendar_section_ms": getattr(r, 'calendar_section_ms', None),
+            "game_section_ms": getattr(r, 'game_section_ms', None),
+            "time_to_calendar_ms": getattr(r, 'time_to_calendar_ms', None),
+            "time_to_game_ms": getattr(r, 'time_to_game_ms', None),
+            "rage_click_count": getattr(r, 'rage_click_count', None),
+            "form_focus_ms": getattr(r, 'form_focus_ms', None),
+            "nudge_hover": getattr(r, 'nudge_hover', None),
+            "ease_of_use": getattr(r, 'ease_of_use', None),
+            "layout_clarity": getattr(r, 'layout_clarity', None),
+            "noticed_first": getattr(r, 'noticed_first', None),
+            "real_use_likelihood": getattr(r, 'real_use_likelihood', None),
+            "feedback_text": getattr(r, 'feedback_text', None),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        } for r in results]
         return Response(json.dumps(data, indent=2), mimetype="application/json",
                         headers={"Content-Disposition": "attachment; filename=experiment_results.json"})
 
+    EXPORT_FIELDS = [
+        "id", "condition", "participant_id", "joined",
+        "time_to_join_ms", "click_count", "scroll_depth", "first_interaction_ms",
+        "used_calendar", "typed_game",
+        "calendar_block_count", "calendar_section_ms", "game_section_ms",
+        "time_to_calendar_ms", "time_to_game_ms",
+        "rage_click_count", "form_focus_ms", "nudge_hover",
+        "ease_of_use", "layout_clarity", "noticed_first",
+        "real_use_likelihood", "feedback_text", "created_at",
+    ]
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["id", "condition", "participant_id", "joined", "time_to_join_ms", "created_at"])
+    w.writerow(EXPORT_FIELDS)
     for r in results:
-        w.writerow([r.id, r.condition, r.participant_id, r.joined, r.time_to_join_ms,
-                    r.created_at.isoformat() if r.created_at else ""])
+        w.writerow([
+            r.id, r.condition, r.participant_id, r.joined,
+            r.time_to_join_ms, r.click_count, r.scroll_depth, r.first_interaction_ms,
+            r.used_calendar, r.typed_game,
+            getattr(r, 'calendar_block_count', None),
+            getattr(r, 'calendar_section_ms', None),
+            getattr(r, 'game_section_ms', None),
+            getattr(r, 'time_to_calendar_ms', None),
+            getattr(r, 'time_to_game_ms', None),
+            getattr(r, 'rage_click_count', None),
+            getattr(r, 'form_focus_ms', None),
+            getattr(r, 'nudge_hover', None),
+            getattr(r, 'ease_of_use', None),
+            getattr(r, 'layout_clarity', None),
+            getattr(r, 'noticed_first', None),
+            getattr(r, 'real_use_likelihood', None),
+            getattr(r, 'feedback_text', None),
+            r.created_at.isoformat() if r.created_at else "",
+        ])
     return Response(out.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": "attachment; filename=experiment_results.csv"})
 
@@ -1352,10 +1596,33 @@ def experiment_results():
     """JSON endpoint for dashboard live panel."""
     from website.models import ExperimentResult  # noqa: PLC0415
     results = ExperimentResult.query.order_by(ExperimentResult.created_at).all()
-    return jsonify([{"id": r.id, "condition": r.condition, "joined": r.joined,
-                     "time_to_join_ms": r.time_to_join_ms,
-                     "created_at": r.created_at.isoformat() if r.created_at else None}
-                    for r in results])
+    def serialize_result(r):
+        return {
+            "id": r.id,
+            "condition": r.condition,
+            "joined": r.joined,
+            "time_to_join_ms": r.time_to_join_ms,
+            "click_count": r.click_count,
+            "scroll_depth": r.scroll_depth,
+            "first_interaction_ms": r.first_interaction_ms,
+            "used_calendar": r.used_calendar,
+            "typed_game": r.typed_game,
+            "calendar_block_count": getattr(r, 'calendar_block_count', None),
+            "calendar_section_ms": getattr(r, 'calendar_section_ms', None),
+            "game_section_ms": getattr(r, 'game_section_ms', None),
+            "time_to_calendar_ms": getattr(r, 'time_to_calendar_ms', None),
+            "time_to_game_ms": getattr(r, 'time_to_game_ms', None),
+            "rage_click_count": getattr(r, 'rage_click_count', None),
+            "form_focus_ms": getattr(r, 'form_focus_ms', None),
+            "nudge_hover": getattr(r, 'nudge_hover', None),
+            "ease_of_use": getattr(r, 'ease_of_use', None),
+            "layout_clarity": getattr(r, 'layout_clarity', None),
+            "noticed_first": getattr(r, 'noticed_first', None),
+            "real_use_likelihood": getattr(r, 'real_use_likelihood', None),
+            "feedback_text": getattr(r, 'feedback_text', None),
+            "created_at": r.created_at.isoformat() if r.created_at else None
+        }
+    return jsonify([serialize_result(r) for r in results])
 
 
 @main.route("/experiment/generate_link", methods=["POST"])
@@ -1393,6 +1660,22 @@ def cleanup_db():
     _reset_sequences()
     return "Done! Junk sessions deleted and sequences fixed."
 
+@main.route("/feedback/data")
+def feedback_data():
+    """JSON endpoint — all general feedback rows for the dashboard."""
+    rows = Feedback.query.order_by(Feedback.created_at).all()
+    return jsonify([{
+        "id": f.id,
+        "ease_of_use": f.ease_of_use,
+        "improvement": f.improvement,
+        "accomplished_goal": f.accomplished_goal,
+        "return_likelihood": f.return_likelihood,
+        "recommend_likelihood": f.recommend_likelihood,
+        "additional_comments": f.additional_comments,
+        "created_at": f.created_at.isoformat() if f.created_at else None,
+    } for f in rows])
+
+
 @main.route("/submit-feedback", methods=["POST"])
 def submit_feedback():
     """Handle feedback form submission from the footer modal."""
@@ -1428,4 +1711,61 @@ def submit_feedback():
 
     flash("Thank you for your feedback! It helps us improve SynQ.", "success")
     
-    return redirect(request.referrer or url_for("main.index"))
+    return redirect(url_for("main.index"))
+
+@main.route("/experiment/submit_feedback", methods=["POST"])
+def submit_experiment_feedback():
+    """Save experiment-specific feedback tied to an ExperimentResult row."""
+    from website.models import ExperimentResult  # noqa: PLC0415
+
+    result_id = request.form.get("result_id", type=int)
+    ease_of_use = request.form.get("ease_of_use")
+    layout_clarity = request.form.get("layout_clarity")
+    noticed_first = request.form.get("noticed_first")
+    real_use_likelihood = request.form.get("real_use_likelihood")
+    improvement = request.form.get("improvement", "").strip()
+
+    if result_id:
+        db.session.execute(
+            text("""
+                UPDATE experiment_result
+                SET ease_of_use         = :ease,
+                    layout_clarity      = :clarity,
+                    noticed_first       = :noticed,
+                    real_use_likelihood = :likelihood,
+                    feedback_text       = :improvement
+                WHERE id = :rid
+            """),
+            {
+                "ease": int(ease_of_use) if ease_of_use and ease_of_use.isdigit() else None,
+                "clarity": int(layout_clarity) if layout_clarity and layout_clarity.isdigit() else None,
+                "noticed": noticed_first,
+                "likelihood": int(real_use_likelihood) if real_use_likelihood and real_use_likelihood.isdigit() else None,
+                "improvement": improvement or None,
+                "rid": result_id,
+            }
+        )
+        db.session.commit()
+
+    flash("Thanks for the feedback!", "success")
+    return redirect(url_for("main.index"))
+
+
+@main.route("/experiment/feedback")
+def experiment_feedback():
+    from website.models import ExperimentResult  # import fixed
+
+    result_id = request.args.get("result_id", type=int)
+
+    if not result_id:
+        return redirect(url_for("main.index"))
+
+    result = ExperimentResult.query.get(result_id)
+    if not result:
+        return redirect(url_for("main.index"))
+
+    return render_template(
+        "experiment_feedback.html",
+        condition=result.condition,
+        result_id=result.id,
+    )

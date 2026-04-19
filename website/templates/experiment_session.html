@@ -11,6 +11,71 @@
   Timer starts on page load. On join submit, elapsed ms is posted with the form.
   On page unload without joining, a no_join beacon fires.
 #}
+<div id="consent-modal" class="consent-overlay">
+  <div class="consent-box">
+
+    <div id="consent-step-1">
+
+      <h3 class="mb-3">Informed Consent</h3>
+
+      <p class="muted">
+        SynQ Usability Study — CS422, Colby College
+      </p>
+
+      <p>
+        You are invited to participate in a research study conducted by students in CS422 at Colby College under Professor Naser Al Madi.
+      </p>
+
+      <div class="consent-grid">
+
+        <p><span class="label">Purpose</span><br>
+        Studying how scheduling design affects task completion.</p>
+
+        <p><span class="label">Data</span><br>
+        We collect clicks, scrolls, timing, and task completion. Email is collected only if you join. (As a user of our website)</p>
+
+        <p><span class="label">Risks</span><br>
+        No foreseeable risks.</p>
+
+        <p><span class="label">Confidentiality</span><br>
+        Data is anonymized and deleted by June 1, 2026.</p>
+
+      </div>
+
+      <p class="small-muted">
+        You may withdraw at any time without penalty.
+      </p>
+
+      <div class="d-flex justify-content-center mt-3">
+        <button class="btn btn-primary" onclick="goToInstructions()">
+            I Agree 
+        </button>
+      </div>
+
+    </div>
+        <div id="consent-step-2" style="display:none;">
+
+        <h3 class="mb-3">What You Will Do</h3>
+
+        <ul class="consent-steps">
+        <li><span class="step-dot step-blue"></span>Open the SynQ session page</li>
+        <li><span class="step-dot step-green"></span>Mark your availability on the calendar</li>
+        <li><span class="step-dot step-yellow"></span>Review group availability and game options</li>
+        <li><span class="step-dot step-purple"></span>Join the session by submitting the form</li>
+        </ul>
+
+        <p class="time-estimate">
+        ⏱ The task takes approximately <strong>5 minutes</strong>
+        </p>
+
+      <button class="btn btn-primary mt-3" onclick="acceptConsent()">
+        Start Task
+      </button>
+
+    </div>
+
+  </div>
+</div>
 
 <div class="panel mb-4 p-4">
 
@@ -132,6 +197,19 @@
                 <input type="hidden" name="link_token" value="{{ link_token }}">
                 <input type="hidden" name="time_to_join_ms" id="time-to-join-input" value="">
                 <input type="hidden" name="temp_availability" id="temp-availability-input" value="[]">
+                <input type="hidden" name="click_count" id="click-count-input">
+                <input type="hidden" name="scroll_depth" id="scroll-depth-input">
+                <input type="hidden" name="first_interaction_ms" id="first-interaction-input">
+                <input type="hidden" name="used_calendar" id="used-calendar-input">
+                <input type="hidden" name="typed_game" id="typed-game-input">
+                <input type="hidden" name="calendar_block_count" id="calendar-block-count-input" value="0">
+                <input type="hidden" name="calendar_section_ms"  id="calendar-section-ms-input"  value="0">
+                <input type="hidden" name="game_section_ms"      id="game-section-ms-input"      value="0">
+                <input type="hidden" name="time_to_calendar_ms"  id="time-to-calendar-ms-input"  value="-1">
+                <input type="hidden" name="time_to_game_ms"      id="time-to-game-ms-input"      value="-1">
+                <input type="hidden" name="rage_click_count"     id="rage-click-count-input"     value="0">
+                <input type="hidden" name="form_focus_ms"        id="form-focus-ms-input"        value="0">
+                <input type="hidden" name="nudge_hover"          id="nudge-hover-input"          value="0">
 
                 <div class="row g-3 mb-3">
                     <div class="col-sm-6">
@@ -168,8 +246,8 @@
 window.isExperiment = true;
 </script>
 <script>
-// ── Timer ─────────────────────────────────────────────────────────────────
-var _expStartMs = Date.now();
+// ── Timer (null until consent accepted) ───────────────────────────────────
+var _expStartMs = null;
 
 window.squadScheduleData = {{ grouped_json|tojson }};
 window.squadScheduleToken  = '';
@@ -177,6 +255,7 @@ window.squadScheduleHash = null;
 window.squadScheduleMyName = 'You (Unsaved)';
 window.squadIsHost         = false;
 window.squadToken          = '';
+window.consentGiven = false;
 </script>
 
 <link rel="stylesheet" href="/static/css/calendar.css">
@@ -186,31 +265,250 @@ window.squadToken          = '';
 <script src="/static/js/game_covers.js" defer></script>
 
 <script>
-// ── On join submit: stamp elapsed time + temp blocks ─────────────────────
-document.getElementById('experiment-join-form').addEventListener('submit', function() {
-    document.getElementById('time-to-join-input').value = Date.now() - _expStartMs;
-    if (window.tempBlocks && window.tempBlocks.length > 0) {
-        document.getElementById('temp-availability-input').value = JSON.stringify(window.tempBlocks);
+// ════════════════════════════════════════════════════════════════════════
+//  DEPENDENT VARIABLE TRACKING
+//  All counters/timers only run after consentGiven = true.
+// ════════════════════════════════════════════════════════════════════════
+
+// ── Basic ─────────────────────────────────────────────────────────────────
+let clickCount = 0;
+document.addEventListener('click', () => { if (window.consentGiven) clickCount++; });
+
+let maxScroll = 0;
+window.addEventListener('scroll', () => {
+    if (!window.consentGiven) return;
+    maxScroll = Math.max(maxScroll,
+        (window.scrollY + window.innerHeight) / document.body.scrollHeight);
+});
+
+window.firstInteractionTime = null;
+function markInteraction() {
+    if (!window.consentGiven || window.firstInteractionTime || !_expStartMs) return;
+    window.firstInteractionTime = Date.now() - _expStartMs;
+}
+['click', 'keydown'].forEach(evt =>
+    document.addEventListener(evt, markInteraction, { once: true })
+);
+
+// ── Calendar interaction ───────────────────────────────────────────────────
+window.usedCalendar = false;
+window.calendarBlockCount = 0;
+window.timeToCalendarMs = null;
+
+// calendar.js fires 'calendar:block_added' each time a drag completes
+document.addEventListener('calendar:block_added', () => {
+    if (!window.consentGiven) return;
+    window.usedCalendar = true;
+    window.calendarBlockCount++;
+    if (_expStartMs && window.timeToCalendarMs === null)
+        window.timeToCalendarMs = Date.now() - _expStartMs;
+});
+document.addEventListener('mousedown', (e) => {
+    if (!window.consentGiven || !e.target.closest('#group-calendar')) return;
+    window.usedCalendar = true;
+    if (_expStartMs && window.timeToCalendarMs === null)
+        window.timeToCalendarMs = Date.now() - _expStartMs;
+});
+
+// ── Game vote interaction ──────────────────────────────────────────────────
+window.typedGame = false;
+window.timeToGameMs = null;
+
+document.querySelector('[name="game_name"]')?.addEventListener('input', () => {
+    if (!window.consentGiven) return;
+    window.typedGame = true;
+    if (_expStartMs && window.timeToGameMs === null)
+        window.timeToGameMs = Date.now() - _expStartMs;
+});
+document.querySelectorAll('.game-vote-card').forEach(card => {
+    card.addEventListener('click', () => {
+        if (!window.consentGiven || !_expStartMs || window.timeToGameMs !== null) return;
+        window.timeToGameMs = Date.now() - _expStartMs;
+    });
+});
+
+// ── Section dwell time (IntersectionObserver) ─────────────────────────────
+let calendarSectionMs = 0, gameSectionMs = 0;
+let _calEnter = null, _gameEnter = null;
+
+const _sectionObs = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        const now = Date.now();
+        const isCalendar = entry.target.id === 'calendar-section';
+        const isGame     = entry.target.id === 'game-tally-list';
+        if (!window.consentGiven) {
+            if (isCalendar && entry.isIntersecting) { _calEnter = null; }
+            if (isGame && entry.isIntersecting) { _gameEnter = null; }
+            return;
+        }
+        if (isCalendar) {
+            if (entry.isIntersecting && !_calEnter) { _calEnter = now; }
+            else if (!entry.isIntersecting && _calEnter) { calendarSectionMs += now - _calEnter; _calEnter = null; }
+        }
+        if (isGame) {
+            if (entry.isIntersecting && !_gameEnter) { _gameEnter = now; }
+            else if (!entry.isIntersecting && _gameEnter) { gameSectionMs += now - _gameEnter; _gameEnter = null; }
+        }
+    });
+}, { threshold: 0.3 });
+document.querySelectorAll('#calendar-section, #game-tally-list').forEach(el =>
+    _sectionObs.observe(el)
+);
+
+document.addEventListener('visibilitychange', () => {
+    const now = Date.now();
+    if (_calEnter)  { calendarSectionMs  += now - _calEnter;  _calEnter  = null; }
+    if (_gameEnter) { gameSectionMs       += now - _gameEnter; _gameEnter = null; }
+});
+
+function _refreshSectionVisibility() {
+    if (!window.consentGiven) return;
+    const now = Date.now();
+    const calEl = document.getElementById('calendar-section');
+    const gameEl = document.getElementById('game-tally-list');
+    const inView = (el) => {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.top < window.innerHeight && rect.bottom > 0;
+    };
+    if (calEl && !_calEnter && inView(calEl)) {
+        _calEnter = now;
     }
+    if (gameEl && !_gameEnter && inView(gameEl)) {
+        _gameEnter = now;
+    }
+}
+
+// ── Rage-click detection ───────────────────────────────────────────────────
+let rageClickCount = 0;
+let _lastRageTarget = null, _lastRageTime = 0, _rageSeq = 0;
+document.addEventListener('click', (e) => {
+    if (!window.consentGiven) return;
+    const now = Date.now();
+    if (e.target === _lastRageTarget && now - _lastRageTime < 500) {
+        _rageSeq++;
+        if (_rageSeq >= 2) rageClickCount++;
+    } else { _rageSeq = 0; }
+    _lastRageTarget = e.target;
+    _lastRageTime = now;
 });
 
-// ── On unload without joining: fire no_join beacon ───────────────────────
+// ── Form focus time ────────────────────────────────────────────────────────
+let formFocusMs = 0, _focusEnter = null;
+document.querySelectorAll('#experiment-join-form input, #experiment-join-form textarea').forEach(el => {
+    el.addEventListener('focus', () => { if (window.consentGiven) _focusEnter = Date.now(); });
+    el.addEventListener('blur',  () => {
+        if (_focusEnter) { formFocusMs += Date.now() - _focusEnter; _focusEnter = null; }
+    });
+});
+
+// ── Nudge-link hover ───────────────────────────────────────────────────────
+window.nudgeHover = false;
+document.querySelector('.join-nudge-link')?.addEventListener('mouseenter', () => {
+    if (window.consentGiven) window.nudgeHover = true;
+});
+
+// ════════════════════════════════════════════════════════════════════════
+//  HELPER — flush all metrics into hidden form fields
+// ════════════════════════════════════════════════════════════════════════
+function _stampMetrics() {
+    const now = Date.now();
+    // Flush any open section timers
+    if (_calEnter)  { calendarSectionMs  += now - _calEnter;  _calEnter  = null; }
+    if (_gameEnter) { gameSectionMs       += now - _gameEnter; _gameEnter = null; }
+    if (_focusEnter){ formFocusMs         += now - _focusEnter; _focusEnter = null; }
+
+    document.getElementById('click-count-input').value          = clickCount;
+    document.getElementById('scroll-depth-input').value         = maxScroll;
+    document.getElementById('time-to-join-input').value         = _expStartMs ? now - _expStartMs : -1;
+    document.getElementById('temp-availability-input').value    = JSON.stringify(window.tempBlocks || []);
+    document.getElementById('first-interaction-input').value    = window.firstInteractionTime || -1;
+    document.getElementById('used-calendar-input').value        = window.usedCalendar ? 1 : 0;
+    document.getElementById('typed-game-input').value           = window.typedGame ? 1 : 0;
+    document.getElementById('calendar-block-count-input').value = window.calendarBlockCount;
+    document.getElementById('calendar-section-ms-input').value  = calendarSectionMs;
+    document.getElementById('game-section-ms-input').value      = gameSectionMs;
+    document.getElementById('time-to-calendar-ms-input').value  = window.timeToCalendarMs ?? -1;
+    document.getElementById('time-to-game-ms-input').value      = window.timeToGameMs ?? -1;
+    document.getElementById('rage-click-count-input').value     = rageClickCount;
+    document.getElementById('form-focus-ms-input').value        = formFocusMs;
+    document.getElementById('nudge-hover-input').value          = window.nudgeHover ? 1 : 0;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  JOIN FORM SUBMIT
+// ════════════════════════════════════════════════════════════════════════
 var _joined = false;
-document.getElementById('experiment-join-form').addEventListener('submit', function() {
+
+document.getElementById('experiment-join-form').addEventListener('submit', function(e) {
+    if (!_expStartMs) {
+        e.preventDefault();
+        alert("Please accept consent first.");
+        return;
+    }
+    _stampMetrics();
     _joined = true;
+    // Normal form POST proceeds — server redirects to /experiment/feedback
 });
 
+// ════════════════════════════════════════════════════════════════════════
+//  ABANDON BEACON
+// ════════════════════════════════════════════════════════════════════════
 window.addEventListener('beforeunload', function() {
-    if (_joined) return;
-    var elapsed = Date.now() - _expStartMs;
-    var fd = new FormData();
-    fd.append('condition', '{{ condition }}');
-    fd.append('time_to_join_ms', elapsed);
-    fd.append('link_token', '{{ link_token }}');
-    navigator.sendBeacon(
-        '{{ url_for("main.experiment_no_join") }}',
-        fd
-    );
+    if (_joined || !_expStartMs) return;   // guard: no beacon if consent never given
+
+    const now = Date.now();
+    if (_calEnter)  calendarSectionMs  += now - _calEnter;
+    if (_gameEnter) gameSectionMs       += now - _gameEnter;
+
+    const fd = new FormData();
+    fd.append('condition',            '{{ condition }}');
+    fd.append('link_token',           '{{ link_token }}');
+    fd.append('time_to_join_ms',      now - _expStartMs);
+    fd.append('click_count',          clickCount);
+    fd.append('scroll_depth',         maxScroll);
+    fd.append('first_interaction_ms', window.firstInteractionTime || -1);
+    fd.append('used_calendar',        window.usedCalendar ? 1 : 0);
+    fd.append('typed_game',           window.typedGame ? 1 : 0);
+    fd.append('calendar_block_count', window.calendarBlockCount);
+    fd.append('calendar_section_ms',  calendarSectionMs);
+    fd.append('game_section_ms',      gameSectionMs);
+    fd.append('time_to_calendar_ms',  window.timeToCalendarMs ?? -1);
+    fd.append('time_to_game_ms',      window.timeToGameMs ?? -1);
+    fd.append('rage_click_count',     rageClickCount);
+    fd.append('form_focus_ms',        formFocusMs);
+    fd.append('nudge_hover',          window.nudgeHover ? 1 : 0);
+    navigator.sendBeacon('{{ url_for("main.experiment_no_join") }}', fd);
+});
+
+// ════════════════════════════════════════════════════════════════════════
+//  CONSENT MODAL FLOW
+// ════════════════════════════════════════════════════════════════════════
+document.body.classList.add('no-consent');
+
+function goToInstructions() {
+    document.getElementById('consent-step-1').style.display = 'none';
+    document.getElementById('consent-step-2').style.display = 'block';
+}
+
+function acceptConsent() {
+    const modal = document.getElementById('consent-modal');
+    modal.classList.add('fade-out');
+    document.body.classList.remove('no-consent');
+    const scrollY = window.scrollY;
+    setTimeout(() => {
+        window.scrollTo(0, scrollY);
+        modal.style.display = 'none';
+    }, 350);
+    window.consentGiven = true;
+    _expStartMs = Date.now();   // ← timer starts HERE, only after agreement
+    _refreshSectionVisibility();
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    document.body.classList.add("no-consent");
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
 });
 </script>
 

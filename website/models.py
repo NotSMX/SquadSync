@@ -152,6 +152,28 @@ class ExperimentResult(db.Model):
         db.DateTime(timezone=True), nullable=False,
         default=lambda: datetime.now(timezone.utc)
     )
+    click_count = db.Column(db.Integer, default=0)
+    scroll_depth = db.Column(db.Float, default=0.0)
+    first_interaction_ms = db.Column(db.Integer, nullable=True)
+    used_calendar = db.Column(db.Boolean, default=False)
+    typed_game = db.Column(db.Boolean, default=False)
+
+    # Extended behavioral metrics (collected by JS but previously not persisted)
+    calendar_block_count = db.Column(db.Integer, default=0)
+    calendar_section_ms = db.Column(db.Integer, default=0)
+    game_section_ms = db.Column(db.Integer, default=0)
+    time_to_calendar_ms = db.Column(db.Integer, nullable=True)
+    time_to_game_ms = db.Column(db.Integer, nullable=True)
+    rage_click_count = db.Column(db.Integer, default=0)
+    form_focus_ms = db.Column(db.Integer, default=0)
+    nudge_hover = db.Column(db.Boolean, default=False)
+
+    # Post-experiment feedback fields
+    ease_of_use = db.Column(db.Integer, nullable=True)
+    layout_clarity = db.Column(db.Integer, nullable=True)
+    noticed_first = db.Column(db.String(20), nullable=True)
+    real_use_likelihood = db.Column(db.Integer, nullable=True)
+    feedback_text = db.Column(db.Text, nullable=True)
 
     def __repr__(self):
         return f"<ExperimentResult condition={self.condition} joined={self.joined}>"

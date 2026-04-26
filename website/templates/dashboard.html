@@ -5,6 +5,15 @@
 <div class="dashboard-game">
   <h2 class="dashboard-title">KPI Dashboard</h2>
 
+  <div class="d-flex justify-content-center mb-4">
+    <div class="btn-group" role="group" aria-label="Dashboard sections">
+      <button id="tab-btn-dashboard" type="button" class="btn btn-outline-light active" onclick="showDashboardTab('dashboard')">Dashboard</button>
+      <button id="tab-btn-analysis" type="button" class="btn btn-outline-light" onclick="showDashboardTab('analysis')">Analysis</button>
+    </div>
+  </div>
+
+  <div id="tab-panel-dashboard">
+
   <!-- Row 1: Core user metrics -->
   <p class="section-label">Users</p>
   <div class="row g-3 mb-4">
@@ -207,7 +216,10 @@
       <p class="text-center small mb-0" style="color:#aaa;" id="feedback-count">Loading…</p>
       <div id="feedback-table" style="display:none; margin-top:1rem;"></div>
   </div>
-  
+  </div>
+
+  <div id="tab-panel-analysis" style="display:none;">
+
   <!-- Experiment Panel -->
   <hr class="section-divider">
   <p class="section-label">Experiment — Join Flow A/B Test</p>
@@ -281,28 +293,38 @@
     </div>
   </div>
 
-  <div id="exp-completion-chart-wrap" class="panel mb-3 p-3" style="display: none; max-width: 640px; margin-left: auto; margin-right: auto;">
-    <p class="section-label mb-2 text-center">Join completion — Yes vs No (by condition)</p>
-    <p class="small text-center mb-2" style="color: rgba(255,255,255,0.45);"><strong style="color:#00ff88;">Yes</strong> = joined · <strong style="color:#f87171;">No</strong> = did not join</p>
-    <div style="position: relative; height: 260px;">
-      <canvas id="exp-completion-chart" aria-label="Joined yes versus no counts for A and B"></canvas>
+  <div class="row g-3 mb-3 align-items-stretch">
+    <div class="col-lg-6">
+      <div id="exp-completion-chart-wrap" class="panel h-100 p-3" style="display: none;">
+        <p class="section-label mb-2 text-center">Join completion — Yes vs No (by condition)</p>
+        <p class="small text-center mb-2" style="color: rgba(255,255,255,0.45);"><strong style="color:#00ff88;">Yes</strong> = joined · <strong style="color:#f87171;">No</strong> = did not join</p>
+        <div style="position: relative; height: 260px;">
+          <canvas id="exp-completion-chart" aria-label="Joined yes versus no counts for A and B"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <p id="exp-join-chart-hint" class="small text-center mb-2 mt-1" style="color: rgba(255,255,255,0.45);">
+        Average time chart appears after someone <strong>joins</strong> with a recorded time - bars show mean seconds; whiskers = +/-1 SEM (standard error of the mean).
+      </p>
+      <div id="exp-join-chart-wrap" class="panel h-100 p-3" style="display: none;">
+        <p class="section-label mb-2 text-center">Time to join — Condition A vs B (averages ± SEM)</p>
+        <div style="position: relative; height: 280px;">
+          <canvas id="exp-join-time-chart" aria-label="Average time to join in seconds for A and B"></canvas>
+        </div>
+      </div>
     </div>
   </div>
 
-  <p id="exp-join-chart-hint" class="small text-center mb-2 mt-4" style="color: rgba(255,255,255,0.45);">
-    Average time chart appears after someone <strong>joins</strong> with a recorded time — bars show mean seconds; whiskers = ±1 SEM (standard error of the mean).
-  </p>
-  <div id="exp-join-chart-wrap" class="panel mb-3 p-3" style="display: none; max-width: 640px; margin-left: auto; margin-right: auto;">
-    <p class="section-label mb-2 text-center">Time to join — Condition A vs B (averages ± SEM)</p>
-    <div style="position: relative; height: 280px;">
-      <canvas id="exp-join-time-chart" aria-label="Average time to join in seconds for A and B"></canvas>
-    </div>
-  </div>
-
-  <div id="exp-all-joins-chart-wrap" class="panel mb-3 p-3" style="display: none; max-width: 720px; margin-left: auto; margin-right: auto;">
-    <p class="section-label mb-2 text-center">All participants — time to join (each join)</p>
-    <div style="position: relative; height: 280px;" id="exp-all-joins-chart-container">
-      <canvas id="exp-all-joins-chart" aria-label="Bar for each participant join time"></canvas>
+  <div class="row g-3 mb-3">
+    <div class="col-12">
+      <div id="exp-all-joins-chart-wrap" class="panel p-3" style="display: none;">
+        <p class="section-label mb-2 text-center">All participants — time to join (each join)</p>
+        <div style="position: relative; height: 280px;" id="exp-all-joins-chart-container">
+          <canvas id="exp-all-joins-chart" aria-label="Bar for each participant join time"></canvas>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1007,6 +1029,19 @@
   }).catch(function() {
     document.getElementById('exp-feedback-count').textContent = 'Could not load';
   });
+
+  function showDashboardTab(tabName) {
+    var dashboardPanel = document.getElementById('tab-panel-dashboard');
+    var analysisPanel = document.getElementById('tab-panel-analysis');
+    var dashboardBtn = document.getElementById('tab-btn-dashboard');
+    var analysisBtn = document.getElementById('tab-btn-analysis');
+    var showAnalysis = tabName === 'analysis';
+
+    dashboardPanel.style.display = showAnalysis ? 'none' : 'block';
+    analysisPanel.style.display = showAnalysis ? 'block' : 'none';
+    dashboardBtn.classList.toggle('active', !showAnalysis);
+    analysisBtn.classList.toggle('active', showAnalysis);
+  }
   </script>
 
   <!-- Testing tools -->
@@ -1021,6 +1056,7 @@
     <button class="btn btn-outline-primary btn-sm">Seed test data</button>
   </form>
 
+</div>
 </div>
 <div id="exp-modal" class="exp-modal">
   <div class="exp-modal-content">

@@ -110,8 +110,13 @@ document.addEventListener('DOMContentLoaded', function() {
     var calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: window.innerWidth < 768 ? 'timeGridDay' : 'timeGridWeek',
         height: 500,
-        slotMinTime: '06:00:00',
+        slotMinTime: '00:00:00',
         slotMaxTime: '24:00:00',
+        slotLabelFormat: {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        },
         headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
         events: events,
         nowIndicator: true,
@@ -121,9 +126,12 @@ document.addEventListener('DOMContentLoaded', function() {
         eventDurationEditable: true,
         selectMirror: false,
         selectOverlap: true,
-        longPressDelay: 300,
-        selectLongPressDelay: 300, 
-        timeZone: 'UTC', 
+        longPressDelay: 1000,
+        scrollTime: '08:00:00',
+        handleWindowResize: true,
+        stickyHeaderDates: true,
+        selectLongPressDelay: 1000, 
+        timeZone: 'local', 
 
         select: function(info) {
             if (!sessionHash && !window.isExperiment) return;
@@ -226,6 +234,22 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         },
 
+        selectAllow: function(selectInfo) {
+            const now = new Date();
+            return selectInfo.start >= now;
+        },
+
+        eventAllow: function(dropInfo, draggedEvent) {
+            const now = new Date();
+            return dropInfo.start >= now;
+        },
+
+        validRange: function(nowDate) {
+            return {
+                start: nowDate
+            };
+        },
+
         eventClick: function(info) {
             window.usedCalendar = true;
             if (window.matchMedia('(pointer: coarse)').matches) return;
@@ -253,8 +277,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 pressTimer = setTimeout(function() {
                     if (!confirm("Remove this availability?")) return;
                     handleEventRemoval(info.event);
-                }, 600);
-            }, { passive: true });
+                }, 1500);
+            });
 
             info.el.addEventListener('touchend', function() {
                 clearTimeout(pressTimer);

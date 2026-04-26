@@ -7,9 +7,9 @@
     pointer-events: none !important;
 }
 
-#group-calendar .fc-timegrid-slots td,
-#group-calendar .fc-timegrid-col {
-    touch-action: manipulation;
+#group-calendar .fc-scroller {
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Hover over time slots */
@@ -47,3 +47,14 @@
   animation: pulseSelect 0.25s ease;
 }
 
+.fc-col-header-cell {
+    background: #161a23;
+}
+
+.fc-timegrid-axis {
+    background: #161a23;
+}
+
+.fc .fc-timegrid-col-frame {
+    background: transparent;
+}

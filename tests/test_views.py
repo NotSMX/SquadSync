@@ -1832,10 +1832,13 @@ def test_experiment_session_invalid_condition(client, app):
 
 
 def test_experiment_session_valid_new_token(client, app):
-    """GET /experiment with a fresh valid token should render 200 and create a pending row."""
+    """GET /experiment with a fresh valid token should render 200; row created after consent."""
     token = _make_valid_link_token(app, "A")
     res = client.get(f"/experiment?link_token={token}")
     assert res.status_code == 200
+
+    # Simulate consent being accepted
+    client.post("/experiment/consent", json={"link_token": token, "condition": "A"})
 
     with app.app_context():
         from website import db as _db
@@ -1845,15 +1848,15 @@ def test_experiment_session_valid_new_token(client, app):
             {"t": token}
         ).fetchone()
         assert row is not None
-        assert row[0] == 0  # joined=False/0
-
+        assert row[0] == 0
 
 def test_experiment_session_already_used_token(client, app):
     """GET /experiment with an already-joined token should return 410."""
     token = _make_valid_link_token(app, "B")
 
-    # First open: creates the pending row
+    # First open + consent: creates the pending row
     client.get(f"/experiment?link_token={token}")
+    client.post("/experiment/consent", json={"link_token": token, "condition": "B"})
 
     # Mark as joined
     with app.app_context():
@@ -1865,16 +1868,14 @@ def test_experiment_session_already_used_token(client, app):
         )
         _db.session.commit()
 
-    # Second open: should see joined=True and return 410
     res = client.get(f"/experiment?link_token={token}")
     assert res.status_code == 410
 
-
 def test_experiment_session_revisit_unopened_token(client, app):
-    """GET /experiment with a valid token that has no row yet should create one and render 200."""
+    """Two visits without joining should only create one row."""
     token = _make_valid_link_token(app, "B")
-    # Hit it twice without marking as joined — second call should find the row and skip INSERT
     res1 = client.get(f"/experiment?link_token={token}")
+    client.post("/experiment/consent", json={"link_token": token, "condition": "B"})
     res2 = client.get(f"/experiment?link_token={token}")
     assert res1.status_code == 200
     assert res2.status_code == 200
@@ -1886,7 +1887,6 @@ def test_experiment_session_revisit_unopened_token(client, app):
             text("SELECT COUNT(*) FROM experiment_result WHERE link_token=:t"),
             {"t": token}
         ).fetchone()
-        # Only one row should have been created
         assert rows[0] == 1
 
 
@@ -1933,7 +1933,8 @@ def test_experiment_join_missing_name(client, app):
 def test_experiment_join_with_link_token(client, app):
     """experiment_join with a valid link_token should update the pending result row."""
     token = _make_valid_link_token(app, "A")
-    client.get(f"/experiment?link_token={token}")  # creates pending row
+    client.get(f"/experiment?link_token={token}")
+    client.post("/experiment/consent", json={"link_token": token, "condition": "A"})  # creates pending row
 
     res = client.post("/experiment/join", data={
         "condition": "A",
@@ -2037,7 +2038,8 @@ def test_experiment_join_with_game_vote(client, app):
 def test_experiment_no_join_with_link_token(client, app):
     """experiment_no_join with a valid link_token should update elapsed time on the row."""
     token = _make_valid_link_token(app, "A")
-    client.get(f"/experiment?link_token={token}")  # creates pending row
+    client.get(f"/experiment?link_token={token}")
+    client.post("/experiment/consent", json={"link_token": token, "condition": "A"})  # creates pending row
 
     res = client.post("/experiment/no_join", data={
         "link_token": token,

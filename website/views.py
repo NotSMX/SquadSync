@@ -1198,16 +1198,6 @@ def experiment_session():
 
     es = _get_or_create_experiment_session()
 
-    if not row:
-        # First time this link has been opened — create the pending result row now
-        from datetime import timezone as _tz  # noqa: PLC0415
-        now = datetime.now(_tz.utc).isoformat()
-        db.session.execute(
-            text("INSERT INTO experiment_result (condition, experiment_session_id, participant_id, joined, link_token, time_to_join_ms, created_at) VALUES (:cond, :es_id, NULL, false, :token, NULL, :now)"),
-            {"cond": condition, "es_id": es.id, "token": link_token, "now": now}
-        )
-        db.session.commit()
-
     try:
         raw_blocks = _json.loads(es.availability_json)
     except (ValueError, TypeError):
@@ -1643,6 +1633,36 @@ def experiment_generate_link():
 
     return jsonify({"link_token": link_token, "condition": condition})
 
+@main.route("/experiment/consent", methods=["POST"])
+def experiment_consent():
+    """Create the pending result row only after consent is confirmed."""
+    from website.models import ExperimentSession, ExperimentResult  # noqa: PLC0415
+    import json as _json  # noqa: PLC0415
+
+    link_token = (request.json or request.form).get("link_token", "").strip()
+    condition = (request.json or request.form).get("condition", "A").upper()
+
+    if not link_token:
+        return jsonify({"ok": False, "error": "no token"}), 400
+
+    es = _get_or_create_experiment_session()
+
+    # Only insert if not already present (idempotent)
+    existing = db.session.execute(
+        text("SELECT id FROM experiment_result WHERE link_token = :token LIMIT 1"),
+        {"token": link_token}
+    ).fetchone()
+
+    if not existing:
+        from datetime import timezone as _tz  # noqa: PLC0415
+        now = datetime.now(_tz.utc).isoformat()
+        db.session.execute(
+            text("INSERT INTO experiment_result (condition, experiment_session_id, participant_id, joined, link_token, time_to_join_ms, created_at) VALUES (:cond, :es_id, NULL, false, :token, NULL, :now)"),
+            {"cond": condition, "es_id": es.id, "token": link_token, "now": now}
+        )
+        db.session.commit()
+
+    return jsonify({"ok": True})
 
 @main.route("/fix-sequences")
 def fix_sequences():

@@ -492,14 +492,22 @@ function goToInstructions() {
 }
 
 function acceptConsent() {
+    // Tell the server consent was given — this creates the result row
+    fetch('/experiment/consent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            link_token: '{{ link_token }}',
+            condition: '{{ condition }}'
+        })
+    });
+
+    const scrollY = window.scrollY;
     const modal = document.getElementById('consent-modal');
     modal.classList.add('fade-out');
     document.body.classList.remove('no-consent');
-    const scrollY = window.scrollY;
-    setTimeout(() => {
-        window.scrollTo(0, scrollY);
-        modal.style.display = 'none';
-    }, 350);
+    window.scrollTo(0, scrollY);
+    setTimeout(() => { modal.style.display = 'none'; }, 350);
     window.consentGiven = true;
     _expStartMs = Date.now();   // ← timer starts HERE, only after agreement
     _refreshSectionVisibility();

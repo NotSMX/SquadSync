@@ -27,7 +27,8 @@
 
     {# ── SQUAD ────────────────────────────────────────────────────────────── #}
     <div class="section-card mb-4">
-        <h4 class="section-title">Squad</h4>
+        <h4 class="section-title">Who's In</h4>
+        <p class="section-hint text-center">Everyone joining this session — that's your squad.</p>
         <div class="squad-grid" id="squad-list">
             {% set colors = ["#3b82f6", "#ef4444", "#22c55e", "#eab308", "#a855f7", "#f97316"] %}
             {% for p, blocks in grouped_availability.items() %}
@@ -68,10 +69,10 @@
         <div id="group-calendar" style="min-height: 450px; width: 100%;"></div>
 
         {% if not token %}
-        <div class="join-nudge mt-3">
-            <span>Happy with your times?</span>
-            <a href="#join-section" class="join-nudge-link">Join the session to lock them in ↓</a>
-        </div>
+            <div class="join-nudge mt-3">
+                <span>📌 Happy with your times?</span>
+                <a href="#join-section" class="join-nudge-link">↓ Save them by joining below</a>
+            </div>
         {% endif %}
     </div>
 
@@ -93,18 +94,17 @@
             </div>
         {% elif token %}
             <h4 class="section-title">What to play?</h4>
-            <p class="section-hint">Suggest a game — the host will choose based on highest votes.</p>
+            <p class="section-hint">Suggest a game for the squad to vote on. The host picks the winner.</p>
             <div class="vote-input-row mb-3 d-flex justify-content-center align-items-center gap-2">
                 <input type="text"
                     id="vote-input"
-                    placeholder="e.g. Valorant, Among Us"
+                    placeholder="Type a game name, e.g. Valorant"
                     value="{{ my_game_vote or '' }}"
                     class="form-control vote-field"
                     style="max-width: 400px;"
                     onkeydown="if(event.key==='Enter'){event.preventDefault();submitVote();}">
-
                 <button type="button" class="btn btn-primary" onclick="submitVote()">
-                    Vote
+                    Submit Vote
                 </button>
             </div>
             <script>
@@ -142,11 +142,36 @@
                 <p class="section-hint text-center" id="no-votes-msg">No votes yet — suggest a game above.</p>
             {% endif %}
         {% else %}
-            {# Non-member view: teaser only, no vote input #}
+           {# Non-member view: teaser only, no vote input #}
             <h4 class="section-title">What to play?</h4>
-            <p class="section-hint text-center">
-                Join the session below to suggest a game and see what the squad is voting for.
+            <p class="section-hint text-center mb-3">Suggest a game — the host picks based on votes.</p>
+            <div class="vote-input-row mb-3 d-flex justify-content-center align-items-center gap-2">
+                <input type="text"
+                    id="guest-vote-input"
+                    placeholder="Type a game name, e.g. Valorant"
+                    class="form-control vote-field"
+                    style="max-width: 400px;">
+                <button type="button" class="btn btn-primary" onclick="guestVoteClick()">
+                    Submit Vote
+                </button>
+            </div>
+            <p class="section-hint text-center" id="guest-vote-hint" style="display:none; color:#f59e0b;">
+                ↓ Join the session below to submit your vote — it'll be saved automatically.
             </p>
+
+            <script>
+                function guestVoteClick() {
+                    const val = document.getElementById('guest-vote-input').value.trim();
+                    if (!val) return;
+                    document.getElementById('join-game-hidden').value = val;
+                    document.getElementById('guest-vote-hint').style.display = 'block';
+                    document.getElementById('join-section').scrollIntoView({ behavior: 'smooth' });
+                    const joinSection = document.getElementById('join-section');
+                    joinSection.style.transition = 'box-shadow 0.3s';
+                    joinSection.style.boxShadow = '0 0 0 2px rgba(123,47,247,0.6)';
+                    setTimeout(() => joinSection.style.boxShadow = '', 2000);
+                }
+            </script>
             {% if game_tally %}
                 <p class="section-hint mb-2">Current votes:</p>
                 <div class="game-tally-grid d-flex flex-wrap justify-content-center gap-3" id="game-tally-list">
@@ -170,13 +195,15 @@
     {# ── JOIN FORM (non-members only) ─────────────────────────────────────── #}
     {% if not token %}
     <div class="section-card mb-4" id="join-section">
-        <h4 class="section-title">Want to join?</h4>
-        <p class="section-hint text-center mb-4">Save your availability and join the session.</p>
+        <h4 class="section-title">Last Step — Join the Session</h4>
+        <p class="section-hint text-center mb-4">Enter your name and email to save your availability and lock in your spot.</p>
+        
 
         <div class="mx-auto" style="max-width: 520px;">
             <div action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" id="join-form">
             <form action="{{ url_for('main.join_and_vote', session_hash=session.hash_id) }}" method="POST" id="join-form-inner">
                 <input type="hidden" name="temp_availability" id="temp-availability-input" value="[]">
+                <input type="hidden" name="game_name" id="join-game-hidden">
 
                 <div class="row g-3 mb-3">
                     <div class="col-sm-6">
@@ -191,14 +218,8 @@
                     </div>
                 </div>
 
-                <div class="mb-4">
-                    <label class="form-label text-white small mb-1">Game Suggestion <span style="color:#888;">(optional)</span></label>
-                    <input type="text" name="game_name" placeholder="e.g. Valorant, Among Us"
-                           class="form-control join-input">
-                </div>
-
                 <button type="submit" class="btn btn-primary w-100 py-2 fw-bold join-submit d-block mx-auto" style="width: 100%;">
-                    Join Session &amp; Save Times
+                    Save My Times &amp; Join →
                 </button>
             </form>
             </div>

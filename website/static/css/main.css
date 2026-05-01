@@ -3,6 +3,13 @@
 body {
     background: #0f1117;
     color: #e4e6eb;
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+}
+
+.session-title,
+.host-badge,
+.navbar-brand,
+.section-title {
     font-family: 'Orbitron', sans-serif;
 }
 

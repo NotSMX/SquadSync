@@ -3,6 +3,13 @@
 body {
     background: #0f1117;
     color: #e4e6eb;
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+}
+
+.session-title,
+.host-badge,
+.navbar-brand,
+.section-title {
     font-family: 'Orbitron', sans-serif;
 }
 
@@ -118,6 +125,17 @@ h1, h2, h3 {
 
 .fc-toolbar-title {
     font-weight: 600;
+}
+
+.fc .fc-toolbar.fc-header-toolbar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+}
+
+.fc .fc-toolbar-chunk:last-child {
+    display: flex;
+    justify-content: flex-end;
 }
 
 /* ===== Subtle Divider ===== */

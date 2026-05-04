@@ -1,60 +1,224 @@
-.fc .fc-highlight { background-color: var(--fc-selection-color, rgb(255,255,255)) !important; }
-.fc .fc-event-mirror { background-color: var(--my-color) !important; border-color: transparent !important; opacity: 0.85; }
-.fc-bg-event { opacity: 0.55; }
-.fc-event { cursor: pointer; }
+/* ===== FullCalendar Shell ===== */
+
+.fc {
+    background: #12151e;
+    border-radius: 12px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ===== Toolbar ===== */
+
+.fc .fc-toolbar {
+    padding: 4px 4px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.fc .fc-toolbar-title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #c8c8d8;
+}
+
+.fc .fc-button {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: #bbb !important;
+    border-radius: 7px !important;
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.05em !important;
+    padding: 4px 12px !important;
+    transition: all 0.15s ease !important;
+    box-shadow: none !important;
+}
+
+.fc .fc-button:hover {
+    background: rgba(123, 47, 247, 0.2) !important;
+    border-color: rgba(123, 47, 247, 0.45) !important;
+    color: #d8b8ff !important;
+}
+
+.fc .fc-button-active,
+.fc .fc-button:active {
+    background: rgba(123, 47, 247, 0.3) !important;
+    border-color: rgba(123, 47, 247, 0.6) !important;
+    color: #e0c8ff !important;
+}
+
+/* ===== Column Headers ===== */
+
+.fc .fc-col-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.fc .fc-col-header-cell {
+    background: #161a24;
+    padding: 8px 0;
+}
+
+.fc .fc-col-header-cell-cushion {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8888aa;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+.fc .fc-col-header-cell-cushion:hover {
+    color: #b89ff7;
+}
+
+/* ===== Time Axis ===== */
+
+.fc .fc-timegrid-axis {
+    background: #161a24;
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.fc .fc-timegrid-slot-label-cushion {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: #555570;
+    padding-right: 8px;
+}
+
+/* ===== Grid Lines ===== */
+
+.fc .fc-timegrid-slot {
+    border-color: rgba(255, 255, 255, 0.04) !important;
+    height: 2.2em;
+}
+
+.fc .fc-timegrid-slot-minor {
+    border-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+.fc .fc-scrollgrid {
+    border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.fc .fc-scrollgrid td,
+.fc .fc-scrollgrid th {
+    border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* ===== Time Column Hover ===== */
+
+#group-calendar .fc-timegrid-slot:hover {
+    background: rgba(123, 47, 247, 0.08);
+    cursor: pointer;
+}
+
+/* ===== Selection Highlight ===== */
+
+.fc .fc-highlight {
+    background: rgba(123, 47, 247, 0.22) !important;
+    border: 1px solid rgba(123, 47, 247, 0.5);
+    border-radius: 4px;
+}
+
+/* ===== Events ===== */
+
+.fc .fc-event {
+    cursor: pointer;
+    border-radius: 6px !important;
+    border: none !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    transition: filter 0.15s ease, transform 0.1s ease;
+}
+
+.fc .fc-event:hover {
+    filter: brightness(1.15);
+    transform: scaleX(1.015);
+}
+
+.fc .fc-event-time,
+.fc .fc-event-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 1px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
 
 .fc-event:not(.fc-event-mine) {
     pointer-events: none !important;
+    opacity: 0.75;
 }
+
+.fc-event-mine {
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 2px 8px rgba(0,0,0,0.4);
+}
+
+/* ===== Drag Mirror ===== */
+
+.fc .fc-event-mirror {
+    background-color: var(--my-color) !important;
+    border-color: transparent !important;
+    opacity: 0.8;
+    border-radius: 6px !important;
+    animation: pulseSelect 0.2s ease;
+}
+
+@keyframes pulseSelect {
+    0%   { transform: scale(0.97); opacity: 0.5; }
+    100% { transform: scale(1);    opacity: 0.8; }
+}
+
+/* ===== Now Indicator ===== */
+
+.fc .fc-timegrid-now-indicator-line {
+    border-color: #7b2ff7;
+    border-width: 1.5px;
+    opacity: 0.8;
+}
+
+.fc .fc-timegrid-now-indicator-arrow {
+    border-top-color: #7b2ff7;
+    border-bottom-color: #7b2ff7;
+}
+
+/* ===== Today Column ===== */
+
+.fc .fc-day-today {
+    background: rgba(123, 47, 247, 0.04) !important;
+}
+
+/* ===== Scrollbar ===== */
 
 #group-calendar .fc-scroller {
     touch-action: pan-y;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(123, 47, 247, 0.3) transparent;
 }
 
-/* Hover over time slots */
-#group-calendar .fc-timegrid-slot:hover {
-    background: rgba(123, 47, 247, 0.12);
-    cursor: pointer;
+#group-calendar .fc-scroller::-webkit-scrollbar {
+    width: 5px;
 }
 
-/* When selecting (dragging) */
-.fc-highlight {
-    background: rgba(123, 47, 247, 0.35) !important;
-    border: 1px solid rgba(123, 47, 247, 0.6);
-}
-
-/* Existing availability blocks */
-.fc-bg-event {
-    backdrop-filter: blur(4px);
-    border-radius: 4px;
-    transition: transform 0.1s ease, opacity 0.15s ease;
-}
-
-/* Slight pop on hover */
-.fc-bg-event:hover {
-    transform: scale(1.02);
-    opacity: 0.85;
-}
-
-@keyframes pulseSelect {
-  0%   { transform: scale(1); opacity: 0.6; }
-  50%  { transform: scale(1.03); opacity: 1; }
-  100% { transform: scale(1); }
-}
-
-.fc-event-mirror {
-  animation: pulseSelect 0.25s ease;
-}
-
-.fc-col-header-cell {
-    background: #161a23;
-}
-
-.fc-timegrid-axis {
-    background: #161a23;
-}
-
-.fc .fc-timegrid-col-frame {
+#group-calendar .fc-scroller::-webkit-scrollbar-track {
     background: transparent;
+}
+
+#group-calendar .fc-scroller::-webkit-scrollbar-thumb {
+    background: rgba(123, 47, 247, 0.3);
+    border-radius: 99px;
+}
+
+/* ===== All-day row ===== */
+
+.fc .fc-daygrid-day {
+    background: #12151e;
 }

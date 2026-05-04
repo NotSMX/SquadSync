@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // In experiment mode, there are no pre-loaded "mine" blocks — user starts fresh
         var isMine = (name === myName);
 
-        (grouped[name] || []).forEach(function(block) {
+        mergeBlocks(grouped[name] || []).forEach(function(block) {
             if (block.start && block.end) {
                 events.push({
                     title: name,
@@ -48,7 +48,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     borderColor: "transparent",
                     extendedProps: { 
                         startStr: block.start, 
-                        endStr: block.end 
+                        endStr: block.end,
+                        sources: (grouped[name] || []).filter(function(b) {
+                            return b.start >= block.start && b.end <= block.end;
+                        })
                     }
                 });
             }
@@ -88,6 +91,23 @@ document.addEventListener('DOMContentLoaded', function() {
             sign + pad(Math.floor(absOff / 60)) + ':' + pad(absOff % 60);
     }
 
+    function mergeBlocks(blocks) {
+        if (!blocks || blocks.length === 0) return [];
+        var sorted = blocks.slice().sort(function(a, b) {
+            return a.start < b.start ? -1 : a.start > b.start ? 1 : 0;
+        });
+        var merged = [{ start: sorted[0].start, end: sorted[0].end }];
+        for (var i = 1; i < sorted.length; i++) {
+            var last = merged[merged.length - 1];
+            if (sorted[i].start <= last.end) {
+                if (sorted[i].end > last.end) last.end = sorted[i].end;
+            } else {
+                merged.push({ start: sorted[i].start, end: sorted[i].end });
+            }
+        }
+        return merged;
+    }
+
     var clearBtn = document.getElementById('clear-availability');
     if (clearBtn) {
         clearBtn.addEventListener('click', function() {
@@ -97,8 +117,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 .forEach(function(e) {
                     var fd = new FormData();
                     fd.append('token', token);
-                    fd.append('start', e.startStr);
-                    fd.append('end', e.endStr);
+                    fd.append('start', e.extendedProps.startStr || e.startStr.slice(0, 19));
+                    fd.append('end', e.extendedProps.endStr || e.endStr.slice(0, 19));
                     fetch('/session/' + sessionHash + '/remove_availability', {
                         method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
                     });
@@ -176,7 +196,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         e.remove();
                     });
 
-                window.tempBlocks.push({ start: info.startStr, end: info.endStr });
+                var localStart = info.startStr.slice(0, 19);
+                var localEnd   = info.endStr.slice(0, 19);
+                window.tempBlocks.push({ start: localStart, end: localEnd });
 
                 calendar.addEvent({
                     title: myName, 
@@ -190,7 +212,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     classNames: ['fc-event-mine'],
                     backgroundColor: myColor + "99", 
                     borderColor: "transparent",
-                    extendedProps: { startStr: info.startStr, endStr: info.endStr }
+                    extendedProps: { startStr: localStart, endStr: localEnd }
                 });
                 return;
             }
@@ -198,8 +220,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // AUTHENTICATED FLOW
             var fd = new FormData();
             fd.append('token', token);
-            fd.append('start', info.startStr);
-            fd.append('end', info.endStr);
+            fd.append('start', info.startStr.slice(0, 19));
+            fd.append('end', info.endStr.slice(0, 19));
             fetch('/session/' + sessionHash + '/add_availability', {
                 method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
@@ -215,8 +237,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         .forEach(function(e) {
                             var fd = new FormData();
                             fd.append('token', token);
-                            fd.append('start', e.startStr);
-                            fd.append('end', e.endStr);
+                            fd.append('start', e.extendedProps.startStr || e.startStr.slice(0, 19));
+                            fd.append('end', e.extendedProps.endStr || e.endStr.slice(0, 19));
                             fetch('/session/' + sessionHash + '/remove_availability', {
                                 method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
                             });
@@ -228,7 +250,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         display: 'auto', editable: true, interactive: true,
                         classNames: ['fc-event-mine'],
                         backgroundColor: myColor + "99", borderColor: "transparent",
-                        extendedProps: { startStr: info.startStr, endStr: info.endStr }
+                        extendedProps: { startStr: info.startStr.slice(0, 19), endStr: info.endStr.slice(0, 19) }
                     });
                 }
             });
@@ -294,12 +316,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (window.isExperiment) {
                 // Use extendedProps keys for matching — they're set at create-time
                 // and avoid any UTC-vs-local-offset mismatch with .toISOString().
-                var oldStart = info.oldEvent.extendedProps && info.oldEvent.extendedProps.startStr
-                    ? info.oldEvent.extendedProps.startStr
-                    : info.oldEvent.startStr;
-                var oldEnd = info.oldEvent.extendedProps && info.oldEvent.extendedProps.endStr
-                    ? info.oldEvent.extendedProps.endStr
-                    : info.oldEvent.endStr;
+                var oldStart = info.oldEvent.extendedProps.startStr || info.oldEvent.startStr.slice(0, 19);
+                var oldEnd   = info.oldEvent.extendedProps.endStr   || info.oldEvent.endStr.slice(0, 19);
 
                 var newStart = info.event.startStr;
                 var newEnd   = info.event.endStr;
@@ -311,16 +329,30 @@ document.addEventListener('DOMContentLoaded', function() {
                     return b;
                 });
 
-                // Keep extendedProps in sync for future edits/removals
-                info.event.setExtendedProp('startStr', newStart);
-                info.event.setExtendedProp('endStr', newEnd);
-
                 document.dispatchEvent(new CustomEvent('synq:availability', {
                     detail: {
                         [myName]: window.tempBlocks
                     }
                 }));
 
+                return;
+            }
+            // UNAUTHENTICATED FLOW — blocks are local only, just update tempBlocks
+            if (!token) {
+                var oldStart = info.oldEvent.extendedProps.startStr || info.oldEvent.startStr.slice(0, 19);
+                var oldEnd   = info.oldEvent.extendedProps.endStr   || info.oldEvent.endStr.slice(0, 19);
+                var dropNewStart = info.event.startStr.slice(0, 19);
+                var dropNewEnd   = info.event.endStr.slice(0, 19);
+
+                window.tempBlocks = window.tempBlocks.map(function(b) {
+                    if (b.start === oldStart && b.end === oldEnd) {
+                        return { start: dropNewStart, end: dropNewEnd };
+                    }
+                    return b;
+                });
+
+                info.event.setExtendedProp('startStr', dropNewStart);
+                info.event.setExtendedProp('endStr', dropNewEnd);
                 return;
             }
 
@@ -331,32 +363,92 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            var oldFd = new FormData();
-            oldFd.append('token', token);
-            oldFd.append('start', info.oldEvent.startStr);
-            oldFd.append('end', info.oldEvent.endStr);
-            fetch('/session/' + sessionHash + '/remove_availability', {
-                method: 'POST', body: oldFd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            })
-            .then(r => r.json())
-            .then(function(data) {
-                if (!data || data.ok === false) { info.revert(); return; }
+            var removePromises = [];
 
-                var newFd = new FormData();
-                newFd.append('token', token);
-                newFd.append('start', info.event.startStr);
-                newFd.append('end', info.event.endStr);
-                return fetch('/session/' + sessionHash + '/add_availability', {
-                    method: 'POST', body: newFd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                })
-                .then(r => r.json())
-                .then(function(addData) {
-                    if (!addData || addData.ok === false) { info.revert(); return; }
-                    info.event.setExtendedProp('startStr', info.event.startStr);
-                    info.event.setExtendedProp('endStr', info.event.endStr);
+            var oldSources = info.oldEvent.extendedProps.sources;
+
+            if (oldSources && oldSources.length > 0) {
+                // Remove all original source blocks if this event was merged
+                removePromises = oldSources.map(function(src) {
+                    var fd = new FormData();
+                    fd.append('token', token);
+                    fd.append('start', src.start.slice(0, 19));
+                    fd.append('end', src.end.slice(0, 19));
+
+                    return fetch('/session/' + sessionHash + '/remove_availability', {
+                        method: 'POST',
+                        body: fd,
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    }).then(r => r.json());
                 });
-            })
-            .catch(function() { info.revert(); });
+            } else {
+                // Fallback for normal single-block event
+                var oldFd = new FormData();
+                oldFd.append('token', token);
+
+                var oldStart = (info.oldEvent.extendedProps && info.oldEvent.extendedProps.startStr)
+                    ? info.oldEvent.extendedProps.startStr
+                    : toLocalISOString(info.oldEvent.start);
+
+                var oldEnd = (info.oldEvent.extendedProps && info.oldEvent.extendedProps.endStr)
+                    ? info.oldEvent.extendedProps.endStr
+                    : toLocalISOString(info.oldEvent.end);
+
+                oldFd.append('start', oldStart);
+                oldFd.append('end', oldEnd);
+
+                removePromises = [
+                    fetch('/session/' + sessionHash + '/remove_availability', {
+                        method: 'POST',
+                        body: oldFd,
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    }).then(r => r.json())
+                ];
+            }
+
+            Promise.all(removePromises)
+                .then(function(results) {
+                    if (results.some(function(d) { return !d || d.ok === false; })) {
+                        info.revert();
+                        return;
+                    }
+
+                    var newFd = new FormData();
+                    newFd.append('token', token);
+
+                    var dropNewStart = info.event.startStr.slice(0, 19);
+                    var dropNewEnd   = info.event.endStr.slice(0, 19);
+
+                    newFd.append('start', dropNewStart);
+                    newFd.append('end', dropNewEnd);
+
+                    return fetch('/session/' + sessionHash + '/add_availability', {
+                        method: 'POST',
+                        body: newFd,
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                })
+                .then(function(r) {
+                    if (!r) return;
+                    return r.json();
+                })
+                .then(function(addData) {
+                    if (!addData || addData.ok === false) {
+                        info.revert();
+                        return;
+                    }
+
+                    info.event.setExtendedProp('startStr', info.event.startStr.slice(0, 19));
+                    info.event.setExtendedProp('endStr', info.event.endStr.slice(0, 19));
+
+                    // Clear sources since moved block is now a fresh standalone block
+                    info.event.setExtendedProp('sources', null);
+                })
+                .catch(function() {
+                    info.revert();
+                });
+                console.log('remove URL:', '/session/' + sessionHash + '/remove_availability');
+                console.log('oldStart:', oldStart, 'oldEnd:', oldEnd);
         },
     });
 
@@ -386,17 +478,34 @@ document.addEventListener('DOMContentLoaded', function() {
         // Handle authenticated removal
         var fd = new FormData();
         fd.append('token', token);
-        fd.append('start', event.startStr);
-        fd.append('end', event.endStr);
-        fetch('/session/' + sessionHash + '/remove_availability', {
-            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        })
-        .then(r => r.json())
-        .then(function(data) {
-            if (!data || data.ok === false) { alert("Failed to remove availability."); return; }
+        var sources = event.extendedProps.sources;
+        if (sources && sources.length > 0) {
+            sources.forEach(function(src) {
+                var fd = new FormData();
+                fd.append('token', token);
+                fd.append('start', src.start.slice(0, 19));
+                fd.append('end', src.end.slice(0, 19));
+                fetch('/session/' + sessionHash + '/remove_availability', {
+                    method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+            });
             event.remove();
-        })
-        .catch(function() { event.remove(); });
+        } else {
+            // fallback for non-merged blocks
+            var fd = new FormData();
+            fd.append('token', token);
+            fd.append('start', event.extendedProps.startStr || event.startStr.slice(0, 19));
+            fd.append('end', event.extendedProps.endStr || event.endStr.slice(0, 19));
+            fetch('/session/' + sessionHash + '/remove_availability', {
+                method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(r => r.json())
+            .then(function(data) {
+                if (!data || data.ok === false) { alert("Failed to remove availability."); return; }
+                event.remove();
+            })
+            .catch(function() { event.remove(); });
+        }
     }
 
     function rebuildCalendar(fresh) {
@@ -422,19 +531,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 squadList.appendChild(card);
             }
 
-            if (name === window.squadScheduleMyName) return;
+            if (name === window.squadScheduleMyName || name === myName) return;
 
-            (fresh[name] || []).forEach(function(block) {
+            mergeBlocks(fresh[name] || []).forEach(function(block) {
                 if (block.start && block.end) {
+                    var bStart = block.start ? block.start.replace('Z', '') : block.start;
+                    var bEnd   = block.end   ? block.end.replace('Z', '')   : block.end;
+                    var sources = (fresh[name] || []).filter(function(b) {
+                        return b.start >= block.start && b.end <= block.end;
+                    });
                     calendar.addEvent({
-                        title: name, start: block.start, end: block.end,
+                        title: name, start: bStart, end: bEnd,
                         display: 'auto', editable: false, interactive: false,
                         backgroundColor: color + "20",
-                        borderColor: "transparent"
+                        borderColor: "transparent",
+                        extendedProps: { sources: sources }
                     });
                 }
             });
         });
     }
-
+    window.rebuildCalendar = rebuildCalendar;
 });

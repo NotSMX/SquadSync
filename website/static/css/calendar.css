@@ -222,3 +222,19 @@
 .fc .fc-daygrid-day {
     background: #12151e;
 }
+
+.genre-pill {
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid #3a3a55;
+    background: #1e1e2e;
+    color: #9ca3af;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.genre-pill.active {
+    background: #7c3aed;
+    color: #fff;
+    border-color: #7c3aed;
+}

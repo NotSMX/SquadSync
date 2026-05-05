@@ -820,6 +820,11 @@ hr {
     flex: 1;
 }
 
+.vote-field--wide {
+    max-width: none;
+    width: 100%;
+}
+
 /* Game tally grid */
 .game-tally-grid {
     display: flex;

@@ -202,3 +202,165 @@ def test_notify_feedback_handles_error(monkeypatch):
         
     assert success is False
     assert error == "SMTP feedback error"
+
+# ---------------------------------------------------------------------------
+# notify_personal_link
+# ---------------------------------------------------------------------------
+ 
+def _make_participant(name="Alice", email="alice@test.com", token="tok123"):
+    class P:
+        pass
+    p = P()
+    p.name, p.email, p.token = name, email, token
+    return p
+ 
+ 
+def _make_session_stub(title="Sprint Review", hash_id="hashxyz"):
+    class S:
+        pass
+    s = S()
+    s.title, s.hash_id = title, hash_id
+    return s
+ 
+ 
+def test_personal_link_success(monkeypatch):
+    """Returns (True, None) and calls mail.send on the happy path."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    sent = []
+    monkeypatch.setattr("website.utils.mail.send", lambda msg: sent.append(msg))
+ 
+    success, err = notify_personal_link(flask_app, _make_participant(), _make_session_stub())
+ 
+    assert success is True
+    assert err is None
+    assert len(sent) == 1
+ 
+ 
+def test_personal_link_no_mail_username(monkeypatch):
+    """Returns (False, None) early when MAIL_USERNAME is missing."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    flask_app.config["MAIL_USERNAME"] = None
+ 
+    success, err = notify_personal_link(flask_app, _make_participant(), _make_session_stub())
+ 
+    assert success is False
+    assert err is None
+ 
+ 
+def test_personal_link_no_mail_password(monkeypatch):
+    """Returns (False, None) early when MAIL_PASSWORD is missing."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    flask_app.config["MAIL_PASSWORD"] = ""
+ 
+    success, err = notify_personal_link(flask_app, _make_participant(), _make_session_stub())
+ 
+    assert success is False
+    assert err is None
+ 
+ 
+def test_personal_link_empty_email():
+    """Returns (False, None) when participant email is an empty string."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    p = _make_participant(email="")
+ 
+    success, err = notify_personal_link(flask_app, p, _make_session_stub())
+ 
+    assert success is False
+    assert err is None
+ 
+ 
+def test_personal_link_whitespace_email():
+    """Returns (False, None) when participant email is only whitespace."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    p = _make_participant(email="   ")
+ 
+    success, err = notify_personal_link(flask_app, p, _make_session_stub())
+ 
+    assert success is False
+    assert err is None
+ 
+ 
+def test_personal_link_none_email():
+    """Returns (False, None) when participant email is None."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    p = _make_participant(email=None)
+ 
+    success, err = notify_personal_link(flask_app, p, _make_session_stub())
+ 
+    assert success is False
+    assert err is None
+ 
+ 
+def test_personal_link_smtp_exception(monkeypatch):
+    """Returns (False, error_string) when mail.send raises."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    monkeypatch.setattr(
+        "website.utils.mail.send",
+        lambda msg: (_ for _ in ()).throw(RuntimeError("SMTP timeout")),
+    )
+ 
+    success, err = notify_personal_link(flask_app, _make_participant(), _make_session_stub())
+ 
+    assert success is False
+    assert "SMTP timeout" in err
+ 
+ 
+def test_personal_link_recipient_stripped(monkeypatch):
+    """Recipient in the sent message has surrounding whitespace removed."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    sent = []
+    monkeypatch.setattr("website.utils.mail.send", lambda msg: sent.append(msg))
+ 
+    p = _make_participant(email="  carol@test.com  ")
+    notify_personal_link(flask_app, p, _make_session_stub())
+ 
+    assert sent[0].recipients == ["carol@test.com"]
+ 
+ 
+def test_personal_link_subject_contains_session_title(monkeypatch):
+    """Email subject references the session title."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    sent = []
+    monkeypatch.setattr("website.utils.mail.send", lambda msg: sent.append(msg))
+ 
+    notify_personal_link(flask_app, _make_participant(), _make_session_stub(title="Q3 Retro"))
+ 
+    assert "Q3 Retro" in sent[0].subject
+ 
+ 
+def test_personal_link_body_contains_name_and_url(monkeypatch):
+    """Email body greets the participant by name and includes their personal URL."""
+    from website.utils import notify_personal_link
+ 
+    flask_app = _make_app_with_mail()
+    sent = []
+    monkeypatch.setattr("website.utils.mail.send", lambda msg: sent.append(msg))
+ 
+    notify_personal_link(
+        flask_app,
+        _make_participant(name="Dana", token="mytoken"),
+        _make_session_stub(hash_id="hashxyz"),
+    )
+ 
+    body = sent[0].body
+    assert "Dana" in body
+    assert "mytoken" in body or "hashxyz" in body   # URL contains one or both
+ 

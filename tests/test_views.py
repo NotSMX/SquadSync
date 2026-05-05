@@ -2328,3 +2328,776 @@ def test_submit_feedback_invalid_integers(client, app, monkeypatch):
         assert fb.ease_of_use is None
         assert fb.return_likelihood is None
         assert fb.recommend_likelihood is None
+
+"""
+test_views_new.py
+
+Tests covering:
+- _emit_state: early return when game_session is None
+- experiment_session: ALTER TABLE (link_token column) on SQLite (idempotent),
+  and the `if not link_token` → 400 branch
+- experiment_join: ValueError in inner datetime parse (continue),
+  and JSONDecodeError/TypeError in outer json.loads (pass)
+- experiment_consent: `if not link_token` → 400 branch
+- feedback_data: rows returned as JSON list
+- ExperimentResult import inside submit_experiment_feedback,
+  and the full happy-path (result_id present → UPDATE, flash, redirect)
+- submit_experiment_feedback: `if not result_id` redirect and `if not result` redirect
+- set_steam:
+    - empty steam_input clears steam_id
+    - unresolvable steam id → 400
+    - private/unreachable library → 400
+    - happy path saves steam_id
+"""
+# pylint: disable=redefined-outer-name
+# pylint: disable=cyclic-import
+# pylint: disable=duplicate-code
+# pylint: disable=import-outside-toplevel
+
+import pytest
+
+from website import create_app, db
+from website.models import Session, Participant
+
+
+# ── Fixtures ──────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def app():
+    flask_app = create_app()
+    flask_app.config.update({
+        "TESTING": True,
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+        "SQLALCHEMY_EXPIRE_ON_COMMIT": False,
+        "WTF_CSRF_ENABLED": False,
+    })
+    with flask_app.app_context():
+        db.create_all()
+        yield flask_app
+        db.session.remove()
+        db.drop_all()
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+@pytest.fixture
+def sample_session(app):
+    with app.app_context():
+        s = Session(title="Test Session", is_public=True)
+        db.session.add(s)
+        db.session.commit()
+
+        host = Participant(name="Host", email="host@test.com", session_id=s.id)
+        db.session.add(host)
+        db.session.commit()
+
+        s.host_id = host.id
+        db.session.commit()
+
+        return {
+            "session_id": s.id,
+            "session_hash": s.hash_id,
+            "host_id": host.id,
+            "host_token": host.token,
+        }
+
+
+# ── _emit_state: early return when session hash not found ─────────────────────
+
+def test_emit_state_missing_session_returns_silently(app):
+    """_emit_state should return without error when session hash doesn't exist."""
+    from website.views import _emit_state
+    with app.app_context():
+        # Should not raise anything — just an early return
+        _emit_state("nonexistent-hash-xyz")
+
+
+# ── experiment_session: no link_token → 400 ──────────────────────────────────
+
+def test_experiment_session_missing_token_returns_400(client):
+    """/experiment with no link_token should return 400."""
+    res = client.get("/experiment")
+    assert res.status_code == 400
+
+
+def test_experiment_session_empty_token_returns_400(client):
+    """/experiment with an empty link_token should return 400."""
+    res = client.get("/experiment?link_token=")
+    assert res.status_code == 400
+
+
+# ── experiment_session: ALTER TABLE idempotency ───────────────────────────────
+
+def test_experiment_session_alter_table_idempotent(client):
+    """Calling /experiment twice with a valid token should not crash on the
+    second ALTER TABLE (column already exists — exercises the except branch)."""
+    # Generate a valid token first
+    gen = client.post(
+        "/experiment/generate_link",
+        json={"condition": "A"},
+        content_type="application/json",
+    )
+    token = gen.get_json()["link_token"]
+
+    # First call: adds the column
+    res1 = client.get(f"/experiment?link_token={token}")
+    assert res1.status_code == 200
+
+    # Regenerate a fresh token (each token is single-use after consent)
+    gen2 = client.post(
+        "/experiment/generate_link",
+        json={"condition": "B"},
+        content_type="application/json",
+    )
+    token2 = gen2.get_json()["link_token"]
+
+    # Second call: column already exists — the except must swallow the error
+    res2 = client.get(f"/experiment?link_token={token2}")
+    assert res2.status_code == 200
+
+
+# ── experiment_join: ValueError in inner datetime parse ───────────────────────
+
+def test_experiment_join_invalid_availability_value_error_skipped(client):
+    """Bad ISO strings inside temp_availability blocks should be silently skipped
+    (ValueError → continue), and the join should still succeed."""
+    gen = client.post(
+        "/experiment/generate_link",
+        json={"condition": "A"},
+        content_type="application/json",
+    )
+    token = gen.get_json()["link_token"]
+
+    # Create the pending result row via consent
+    client.post(
+        "/experiment/consent",
+        data={"link_token": token, "condition": "A"},
+    )
+
+    bad_avail = '[{"start": "NOT-A-DATE", "end": "ALSO-BAD"}]'
+    res = client.post(
+        "/experiment/join",
+        data={
+            "name": "Tester",
+            "condition": "A",
+            "link_token": token,
+            "temp_availability": bad_avail,
+        },
+        follow_redirects=True,
+    )
+    assert res.status_code == 200
+
+
+# ── experiment_join: JSONDecodeError / TypeError in outer json.loads ──────────
+
+def test_experiment_join_invalid_json_availability_skipped(client):
+    """Completely malformed JSON in temp_availability should be silently skipped
+    (JSONDecodeError → pass), and the join should still succeed."""
+    gen = client.post(
+        "/experiment/generate_link",
+        json={"condition": "B"},
+        content_type="application/json",
+    )
+    token = gen.get_json()["link_token"]
+
+    client.post(
+        "/experiment/consent",
+        data={"link_token": token, "condition": "B"},
+    )
+
+    res = client.post(
+        "/experiment/join",
+        data={
+            "name": "JsonBreaker",
+            "condition": "B",
+            "link_token": token,
+            "temp_availability": "THIS IS NOT JSON {{{",
+        },
+        follow_redirects=True,
+    )
+    assert res.status_code == 200
+
+
+def test_experiment_join_null_availability_type_error_skipped(client):
+    """Passing None-like value for temp_availability (TypeError) should be
+    silently skipped, and the join should still succeed."""
+    gen = client.post(
+        "/experiment/generate_link",
+        json={"condition": "A"},
+        content_type="application/json",
+    )
+    token = gen.get_json()["link_token"]
+
+    client.post(
+        "/experiment/consent",
+        data={"link_token": token, "condition": "A"},
+    )
+
+    # Sending an integer string that json.loads will parse to int, not list
+    # This triggers the `(json.JSONDecodeError, TypeError): pass` branch
+    res = client.post(
+        "/experiment/join",
+        data={
+            "name": "TypeBreaker",
+            "condition": "A",
+            "link_token": token,
+            "temp_availability": "42",  # parses to int → TypeError on iteration
+        },
+        follow_redirects=True,
+    )
+    assert res.status_code == 200
+
+
+# ── experiment_consent: no link_token → 400 ───────────────────────────────────
+
+def test_experiment_consent_missing_token_returns_400(client):
+    """POST /experiment/consent with no token should return 400."""
+    res = client.post(
+        "/experiment/consent",
+        json={"condition": "A"},
+        content_type="application/json",
+    )
+    assert res.status_code == 400
+    data = res.get_json()
+    assert data["ok"] is False
+    assert "no token" in data["error"]
+
+
+def test_experiment_consent_empty_token_returns_400(client):
+    """POST /experiment/consent with empty token string should return 400."""
+    res = client.post(
+        "/experiment/consent",
+        json={"link_token": "", "condition": "A"},
+        content_type="application/json",
+    )
+    assert res.status_code == 400
+
+
+# ── feedback_data: JSON list of Feedback rows ─────────────────────────────────
+
+def test_feedback_data_returns_json_list(client, app):
+    """GET /feedback/data should return a JSON list of feedback rows."""
+    from website.models import Feedback
+
+    with app.app_context():
+        db.session.add(Feedback(
+            ease_of_use=5,
+            improvement="Make it faster",
+            accomplished_goal="Yes",
+            return_likelihood=4,
+            recommend_likelihood=5,
+            additional_comments="Great tool",
+        ))
+        db.session.commit()
+
+    res = client.get("/feedback/data")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    row = data[0]
+    assert "ease_of_use" in row
+    assert "improvement" in row
+    assert "accomplished_goal" in row
+    assert row["ease_of_use"] == 5
+
+
+def test_feedback_data_empty_returns_empty_list(client):
+    """GET /feedback/data with no rows should return an empty JSON list."""
+    res = client.get("/feedback/data")
+    assert res.status_code == 200
+    assert res.get_json() == []
+
+
+# ── submit_experiment_feedback: happy path with result_id ────────────────────
+
+def test_submit_experiment_feedback_with_valid_result_id(client, app):
+    """POST /experiment/submit_feedback with a valid result_id should UPDATE the
+    row, flash success, and redirect to index."""
+    from website.models import ExperimentResult
+
+    with app.app_context():
+        er = ExperimentResult(
+            condition="A",
+            experiment_session_id=None,
+            participant_id=None,
+            joined=True,
+            time_to_join_ms=1000,
+        )
+        db.session.add(er)
+        db.session.commit()
+        result_id = er.id
+
+    res = client.post(
+        "/experiment/submit_feedback",
+        data={
+            "result_id": result_id,
+            "ease_of_use": "4",
+            "layout_clarity": "3",
+            "noticed_first": "calendar",
+            "real_use_likelihood": "5",
+            "improvement": "Add dark mode",
+        },
+        follow_redirects=True,
+    )
+    assert res.status_code == 200
+    assert b"Thanks for the feedback" in res.data
+
+    with app.app_context():
+        er = ExperimentResult.query.get(result_id)
+        assert er.ease_of_use == 4
+        assert er.layout_clarity == 3
+        assert er.noticed_first == "calendar"
+        assert er.real_use_likelihood == 5
+        assert er.feedback_text == "Add dark mode"
+
+
+def test_submit_experiment_feedback_non_digit_values_stored_as_none(client, app):
+    """Non-digit scale values should be stored as NULL (None) rather than crashing."""
+    from website.models import ExperimentResult
+
+    with app.app_context():
+        er = ExperimentResult(
+            condition="B",
+            experiment_session_id=None,
+            participant_id=None,
+            joined=True,
+            time_to_join_ms=500,
+        )
+        db.session.add(er)
+        db.session.commit()
+        result_id = er.id
+
+    res = client.post(
+        "/experiment/submit_feedback",
+        data={
+            "result_id": result_id,
+            "ease_of_use": "not-a-number",
+            "layout_clarity": "",
+            "noticed_first": "game",
+            "real_use_likelihood": "abc",
+            "improvement": "",
+        },
+        follow_redirects=True,
+    )
+    assert res.status_code == 200
+
+    with app.app_context():
+        er = ExperimentResult.query.get(result_id)
+        assert er.ease_of_use is None
+        assert er.layout_clarity is None
+        assert er.real_use_likelihood is None
+
+
+def test_submit_experiment_feedback_no_result_id_redirects(client):
+    """POST /experiment/submit_feedback with no result_id should still flash and
+    redirect (the UPDATE block is skipped, flash always fires)."""
+    res = client.post(
+        "/experiment/submit_feedback",
+        data={
+            "ease_of_use": "3",
+            "layout_clarity": "3",
+            "noticed_first": "game",
+            "real_use_likelihood": "3",
+            "improvement": "Nothing",
+        },
+        follow_redirects=True,
+    )
+    assert res.status_code == 200
+    assert b"Thanks for the feedback" in res.data
+
+
+# ── experiment_feedback GET: no result_id → redirect ─────────────────────────
+
+def test_experiment_feedback_no_result_id_redirects(client):
+    """GET /experiment/feedback with no result_id should redirect to index."""
+    res = client.get("/experiment/feedback")
+    assert res.status_code == 302
+    assert "/" in res.headers["Location"]
+
+
+def test_experiment_feedback_nonexistent_result_id_redirects(client):
+    """GET /experiment/feedback with a result_id that doesn't exist should
+    redirect to index."""
+    res = client.get("/experiment/feedback?result_id=99999")
+    assert res.status_code == 302
+
+
+def test_experiment_feedback_valid_result_id_renders(client, app):
+    """GET /experiment/feedback with a valid result_id should render the page."""
+    from website.models import ExperimentResult
+
+    with app.app_context():
+        er = ExperimentResult(
+            condition="A",
+            experiment_session_id=None,
+            participant_id=None,
+            joined=True,
+            time_to_join_ms=200,
+        )
+        db.session.add(er)
+        db.session.commit()
+        result_id = er.id
+
+    res = client.get(f"/experiment/feedback?result_id={result_id}")
+    assert res.status_code == 200
+
+
+# ── set_steam: empty input clears steam_id ───────────────────────────────────
+
+def test_set_steam_empty_input_clears_steam_id(client, app, sample_session):
+    """Posting an empty steam_input should set steam_id to None and return ok."""
+    with app.app_context():
+        p = Participant.query.get(sample_session["host_id"])
+        p.steam_id = "76561198000000000"
+        db.session.commit()
+
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/set_steam",
+        data={
+            "token": sample_session["host_token"],
+            "steam_input": "",
+        },
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["ok"] is True
+
+    with app.app_context():
+        p = Participant.query.get(sample_session["host_id"])
+        assert p.steam_id is None
+
+
+def test_set_steam_whitespace_only_clears_steam_id(client, app, sample_session):
+    """Whitespace-only steam_input should also clear steam_id."""
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/set_steam",
+        data={
+            "token": sample_session["host_token"],
+            "steam_input": "   ",
+        },
+    )
+    assert res.status_code == 200
+    assert res.get_json()["ok"] is True
+
+
+# ── set_steam: unresolvable ID → 400 ─────────────────────────────────────────
+
+def test_set_steam_unresolvable_id_returns_400(client, app, sample_session, monkeypatch):
+    """resolve_steam_id returning None should yield a 400 with an error message."""
+    monkeypatch.setattr("website.views.resolve_steam_id", lambda raw, key: None)
+
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/set_steam",
+        data={
+            "token": sample_session["host_token"],
+            "steam_input": "not-a-real-profile",
+        },
+    )
+    assert res.status_code == 400
+    data = res.get_json()
+    assert data["ok"] is False
+    assert "Could not resolve" in data["error"]
+
+
+# ── set_steam: private/unreachable library → 400 ─────────────────────────────
+
+def test_set_steam_private_library_returns_400(client, app, sample_session, monkeypatch):
+    """get_steam_games raising an exception should yield a 400 about private library."""
+    monkeypatch.setattr("website.views.resolve_steam_id", lambda raw, key: "76561198000000001")
+    monkeypatch.setattr("website.views.get_steam_games", lambda sid, key, top_n: (_ for _ in ()).throw(Exception("private")))
+
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/set_steam",
+        data={
+            "token": sample_session["host_token"],
+            "steam_input": "someprofile",
+        },
+    )
+    assert res.status_code == 400
+    data = res.get_json()
+    assert data["ok"] is False
+    assert "private" in data["error"].lower() or "unreachable" in data["error"].lower()
+
+
+# ── set_steam: happy path saves steam_id ─────────────────────────────────────
+
+def test_set_steam_happy_path_saves_steam_id(client, app, sample_session, monkeypatch):
+    """Valid steam input should save the resolved steam_id and return it."""
+    fake_steam_id = "76561198012345678"
+    monkeypatch.setattr("website.views.resolve_steam_id", lambda raw, key: fake_steam_id)
+    monkeypatch.setattr("website.views.get_steam_games", lambda sid, key, top_n: {
+        "recent_games": [], "top_games": [], "all_names": set()
+    })
+
+    res = client.post(
+        f"/session/{sample_session['session_hash']}/set_steam",
+        data={
+            "token": sample_session["host_token"],
+            "steam_input": "https://steamcommunity.com/id/someuser",
+        },
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["ok"] is True
+    assert data["steam_id"] == fake_steam_id
+
+    with app.app_context():
+        p = Participant.query.get(sample_session["host_id"])
+        assert p.steam_id == fake_steam_id
+
+def test_recommend_game_success(client, app):
+    """Test successful recommend_game response with mocked AI output."""
+    from unittest.mock import patch, Mock
+
+    session = Session(hash_id="testhash")
+    db.session.add(session)
+    db.session.flush()
+
+    host = Participant(
+        name="Host",
+        token="host-token",
+        session_id=session.id,
+    )
+    db.session.add(host)
+    db.session.flush()
+
+    session.host_id = host.id
+
+    vote = GameVote(
+        session_id=session.id,
+        participant_id=host.id,
+        game_name="Deep Rock Galactic",
+    )
+    db.session.add(vote)
+    db.session.commit()
+
+    app.config["STEAM_API_KEY"] = "fake-steam"
+    app.config["HUGGINGFACE_API_KEY"] = "fake-hf"
+
+    mock_hf_response = Mock()
+    mock_hf_response.status_code = 200
+    mock_hf_response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": """
+                    {
+                      "picks": [
+                        {"game": "Deep Rock Galactic", "reason": "Great coop."},
+                        {"game": "Valheim", "reason": "Fun survival."},
+                        {"game": "Phasmophobia", "reason": "Scary teamwork."},
+                        {"game": "Helldivers 2", "reason": "Chaotic coop."}
+                      ]
+                    }
+                    """
+                }
+            }
+        ]
+    }
+
+    with patch("requests.post", return_value=mock_hf_response):
+        response = client.post(
+            "/session/testhash/recommend_game",
+            data={"token": "host-token"},
+        )
+
+    data = response.get_json()
+
+    assert response.status_code == 200
+    assert data["ok"] is True
+    assert len(data["picks"]) == 4
+
+def test_recommend_game_unauthorized(client):
+    """Non-host participants cannot request recommendations."""
+    session = Session(hash_id="testhash")
+    db.session.add(session)
+    db.session.flush()
+
+    host = Participant(name="Host", token="host-token", session_id=session.id)
+    other = Participant(name="Other", token="other-token", session_id=session.id)
+
+    db.session.add_all([host, other])
+    db.session.flush()
+
+    session.host_id = host.id
+    db.session.commit()
+
+    response = client.post(
+        "/session/testhash/recommend_game",
+        data={"token": "other-token"},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["ok"] is False
+
+def test_recommend_game_model_error(client, app):
+    """Model API failure returns 503."""
+    from unittest.mock import patch, Mock
+
+    session = Session(hash_id="testhash")
+    db.session.add(session)
+    db.session.flush()
+
+    host = Participant(name="Host", token="host-token", session_id=session.id)
+    db.session.add(host)
+    db.session.flush()
+
+    session.host_id = host.id
+    db.session.commit()
+
+    app.config["HUGGINGFACE_API_KEY"] = "fake"
+
+    mock_resp = Mock()
+    mock_resp.status_code = 500
+    mock_resp.text = "Internal Error"
+
+    with patch("requests.post", return_value=mock_resp):
+        response = client.post(
+            "/session/testhash/recommend_game",
+            data={"token": "host-token"},
+        )
+
+    assert response.status_code == 503
+    assert response.get_json()["ok"] is False
+
+def test_recommend_game_unparseable_response(client, app):
+    """Invalid model output returns parse error."""
+    from unittest.mock import patch, Mock
+
+    session = Session(hash_id="testhash")
+    db.session.add(session)
+    db.session.flush()
+
+    host = Participant(name="Host", token="host-token", session_id=session.id)
+    db.session.add(host)
+    db.session.flush()
+
+    session.host_id = host.id
+    db.session.commit()
+
+    app.config["HUGGINGFACE_API_KEY"] = "fake"
+
+    mock_resp = Mock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "choices": [{"message": {"content": "not valid json"}}]
+    }
+
+    with patch("requests.post", return_value=mock_resp):
+        response = client.post(
+            "/session/testhash/recommend_game",
+            data={"token": "host-token"},
+        )
+
+    assert response.status_code == 500
+    assert response.get_json()["ok"] is False
+
+def test_recommend_game_ownership_filter_no_matches(client, app):
+    """Returns graceful message if ownership filter removes all picks."""
+    from unittest.mock import patch, Mock
+
+    session = Session(hash_id="testhash")
+    db.session.add(session)
+    db.session.flush()
+
+    host = Participant(
+        name="Host",
+        token="host-token",
+        session_id=session.id,
+        steam_id="123"
+    )
+    db.session.add(host)
+    db.session.flush()
+
+    session.host_id = host.id
+    db.session.commit()
+
+    app.config["STEAM_API_KEY"] = "fake"
+    app.config["HUGGINGFACE_API_KEY"] = "fake"
+
+    mock_resp = Mock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "choices": [{
+            "message": {
+                "content": """
+                {
+                  "picks": [
+                    {"game": "Unknown Game", "reason": "Why not"}
+                  ]
+                }
+                """
+            }
+        }]
+    }
+
+    with patch("website.views.get_steam_games") as mock_steam, \
+         patch("requests.post", return_value=mock_resp):
+
+        mock_steam.return_value = {
+            "recent_games": [],
+            "top_games": [],
+            "all_names": {"owned game"}
+        }
+
+        response = client.post(
+            "/session/testhash/recommend_game",
+            data={
+                "token": "host-token",
+                "ownership_filter": "all",
+            },
+        )
+
+    data = response.get_json()
+
+    assert response.status_code == 200
+    assert data["ok"] is False
+    assert "No recommendations passed" in data["error"]
+
+def test_recommend_game_steam_failure_ignored(client, app):
+    """Steam lookup failures should not break recommendation."""
+    from unittest.mock import patch, Mock
+
+    session = Session(hash_id="testhash")
+    db.session.add(session)
+    db.session.flush()
+
+    host = Participant(
+        name="Host",
+        token="host-token",
+        session_id=session.id,
+        steam_id="123"
+    )
+    db.session.add(host)
+    db.session.flush()
+
+    session.host_id = host.id
+    db.session.commit()
+
+    app.config["STEAM_API_KEY"] = "fake"
+    app.config["HUGGINGFACE_API_KEY"] = "fake"
+
+    mock_resp = Mock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "choices": [{
+            "message": {
+                "content": '{"picks":[{"game":"Valheim","reason":"Good"}]}'
+            }
+        }]
+    }
+
+    with patch("website.views.get_steam_games", side_effect=Exception("Steam fail")), \
+         patch("requests.post", return_value=mock_resp):
+
+        response = client.post(
+            "/session/testhash/recommend_game",
+            data={"token": "host-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True

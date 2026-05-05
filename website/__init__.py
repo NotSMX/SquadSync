@@ -28,6 +28,8 @@ def create_app():
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["RAWG_API_KEY"] = os.environ.get("RAWG_API_KEY", "")
+    app.config['HUGGINGFACE_API_KEY'] = os.environ.get('HUGGINGFACE_API_KEY', '')
+    app.config['STEAM_API_KEY'] = os.environ.get('STEAM_API_KEY', '')
 
     # SSE: disable connection pooling timeout issues under high thread counts.
     # pool_size=0 → NullPool when using SQLite; for Postgres keep default but

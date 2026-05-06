@@ -20,6 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from website import db, socketio
 from website.models import Confirmation, Participant, Session, Availability, GameVote, Feedback
 from website.utils import notify_final_time, notify_personal_link, notify_feedback_submitted
+from website.steam import resolve_steam_id, get_steam_games
 
 from gevent import spawn
 
@@ -121,6 +122,7 @@ def _ensure_game_election_schema():
             ("experiment_result", "noticed_first", "VARCHAR(20)"),
             ("experiment_result", "real_use_likelihood", "INTEGER"),
             ("experiment_result", "feedback_text", "TEXT"),
+            ("participant", "game_interests", "TEXT"),
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))
@@ -1789,3 +1791,253 @@ def experiment_feedback():
         condition=result.condition,
         result_id=result.id,
     )
+
+@main.route("/session/<session_hash>/recommend_game", methods=["POST"])
+def recommend_game(session_hash):
+    import requests as http_requests
+    import re
+
+    game_session = Session.query.filter_by(hash_id=session_hash).first_or_404()
+    participant_token = request.form.get("token")
+    participant = Participant.query.filter_by(token=participant_token).first_or_404()
+    if participant.id != game_session.host_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 403
+
+    prioritize_votes     = request.form.get("prioritize_votes") == "1"
+    prioritize_recent    = request.form.get("prioritize_recent") == "1"
+    prioritize_ownership = request.form.get("prioritize_ownership") == "1"
+    ignore_votes         = request.form.get("ignore_votes") == "1"
+    free_to_play         = request.form.get("free_to_play") == "1"
+    suggest_new          = request.form.get("suggest_new") == "1"
+    ownership_filter     = request.form.get("ownership_filter", "any")
+    genres_raw           = request.form.get("genres", "").strip()
+    selected_genres      = [g.strip() for g in genres_raw.split(",") if g.strip()]
+    coop_only            = request.form.get("coop_only") == "1"
+
+    squad_size = len(game_session.participants)
+    votes = GameVote.query.filter_by(session_id=game_session.id).all()
+    voted_game_names = [(v.game_name or "").strip() for v in votes if (v.game_name or "").strip()]
+
+    tally = {}
+    for key in voted_game_names:
+        tally[key] = tally.get(key, 0) + 1
+
+    steam_api_key = current_app.config.get("STEAM_API_KEY", "")
+    interest_lines = []
+    ownership_notes = []
+    recent_notes = []
+    all_owned_sets = {}  # {participant_name: set of lowercase game names}
+
+    for p in game_session.participants:
+        parts = []
+        if getattr(p, "game_interests", None):
+            parts.append(f"stated interests: {p.game_interests}")
+
+        if getattr(p, "steam_id", None) and steam_api_key:
+            try:
+                steam_data = get_steam_games(p.steam_id, steam_api_key, top_n=5)
+                all_owned_sets[p.name] = steam_data["all_names"]
+
+                if steam_data["recent_games"]:
+                    recent_notes.append(f"- {p.name} recently played: {', '.join(steam_data['recent_games'])}")
+                elif steam_data["top_games"]:
+                    recent_notes.append(f"- {p.name} top games: {', '.join(steam_data['top_games'])}")
+
+                owned_voted = [g for g in tally if g.lower() in steam_data["all_names"]]
+                if owned_voted:
+                    ownership_notes.append(f"- {p.name} owns: {', '.join(owned_voted)}")
+            except Exception:
+                pass
+
+        if parts:
+            interest_lines.append(f"- {p.name}: {'; '.join(parts)}")
+
+    # Build ownership constraint instruction
+    ownership_instructions = {
+        "any":  "No ownership restriction — recommend any multiplayer game.",
+        "some": "Only recommend games that at least one squad member already owns.",
+        "all":  "Only recommend games that EVERY squad member already owns.",
+        "none": "Only recommend games that NOBODY in the squad owns yet — something entirely new to buy.",
+    }.get(ownership_filter, "No ownership restriction.")
+
+    # Build weighting instructions
+    weight_instructions = []
+    if ignore_votes:
+        weight_instructions.append("IGNORE vote counts entirely.")
+    elif prioritize_votes:
+        weight_instructions.append("Give strong weight to games with the most votes.")
+    if prioritize_recent:
+        weight_instructions.append("Give strong weight to games squad members played recently.")
+    if prioritize_ownership:
+        weight_instructions.append("Strongly prefer games more squad members already own.")
+    if not weight_instructions:
+        weight_instructions.append("Balance votes, recent play, ownership, and stated interests equally.")
+
+    # Genre constraint
+    genre_instruction = ""
+    if selected_genres:
+        genre_instruction = f"Only recommend games in these genres: {', '.join(selected_genres)}."
+
+    # Extra constraints
+    extra_instructions = []
+    if free_to_play:
+        extra_instructions.append("Only recommend free-to-play games.")
+    if suggest_new:
+        extra_instructions.append("Suggest games nobody in the squad has played before — avoid anything in their Steam libraries.")
+    if coop_only:
+        extra_instructions.append(
+            "ONLY recommend games where everyone in the squad are on the same team working together — "
+            "no PvP, no opposing teams, strictly cooperative or co-op PvE only. "
+            "Examples: Deep Rock Galactic, Left 4 Dead 2, Phasmophobia, It Takes Two, Valheim. "
+            "Do NOT suggest games like League of Legends, CS2, or any game where players compete against each other. (Unless the squad size is smaller than the teams in the game)"
+        )
+    votes_block = ""
+    if not ignore_votes and tally:
+        votes_block = f"Voted games (name: vote count):\n" + "\n".join(
+            f"- {g}: {c} vote(s)" for g, c in sorted(tally.items(), key=lambda x: -x[1])
+        )
+    elif not ignore_votes:
+        votes_block = "Voted games: None yet"
+
+    DEAD_SERVICE_GAMES = [
+        "MultiVersus",
+        "Anthem",
+        "Hyper Scape",
+        "Babylon's Fall",
+        "Knockout City",
+        "Rumbleverse",
+        "Spellbreak",
+        "The Culling",
+        "Radical Heights",
+        "LawBreakers",
+        "Battleborn",
+        "Evolve",
+        "Paragon",
+        "Diabotical",
+        "Crucible",
+        "Marvel Heroes",
+        "Firefall",
+        "WildStar",
+        "Realm Royale",
+    ]
+
+    DEAD_GAMES_STR = ", ".join(f'"{g}"' for g in DEAD_SERVICE_GAMES)
+
+    num_to_request = 8 if ownership_filter != "any" else 4
+    prompt = f"""You are helping {squad_size} friends pick a multiplayer game to play tonight.
+
+{votes_block}
+
+Steam activity:
+{chr(10).join(recent_notes) or "- None provided"}
+
+Ownership of voted games:
+{chr(10).join(ownership_notes) or "- None"}
+
+Stated interests:
+{chr(10).join(interest_lines) or "- None provided"}
+
+Constraints (treat these as hard rules):
+- NEVER suggest "Spacewar", "Steam Linux Runtime", or any Steam tool/runtime.
+- NEVER suggest games with shut-down or dead servers that are no longer playable online: {DEAD_GAMES_STR}. If you are unsure whether a game's online servers are still active, do not suggest it.
+- {ownership_instructions}
+{f"- {genre_instruction}" if genre_instruction else ""}
+{chr(10).join(f"- {x}" for x in extra_instructions)}
+
+Weighting (soft preferences within the constraints above):
+{chr(10).join(f"- {w}" for w in weight_instructions)}
+
+Recommend exactly {num_to_request} multiplayer games ranked best to worst. Real game titles only.
+Reply with ONLY this JSON and nothing else:
+{{
+  "picks": [
+    {{"game": "Game Name", "reason": "One sentence why."}},
+    {{"game": "Game Name", "reason": "One sentence why."}},
+    {{"game": "Game Name", "reason": "One sentence why."}},
+    {{"game": "Game Name", "reason": "One sentence why."}}
+  ]
+}}"""
+
+    hf_key = current_app.config.get("HUGGINGFACE_API_KEY", "")
+    response = http_requests.post(
+        "https://router.huggingface.co/novita/v3/openai/chat/completions",
+        headers={"Authorization": f"Bearer {hf_key}"},
+        json={
+            "model": "inclusionai/ling-2.6-1t",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 350 if ownership_filter == "any" else 650,
+        },
+        timeout=30,
+    )
+
+    if response.status_code != 200:
+        return jsonify({"ok": False, "error": f"Model error {response.status_code}: {response.text[:200]}"}), 503
+
+    raw = response.json()
+    text = raw["choices"][0]["message"]["content"].strip()
+
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if not match:
+        return jsonify({"ok": False, "error": "Could not parse recommendation."}), 500
+
+    try:
+        result = json.loads(match.group())
+        picks = result["picks"]
+    except (json.JSONDecodeError, KeyError):
+        return jsonify({"ok": False, "error": "Could not parse recommendation."}), 500
+    
+    # Hard ownership filter — applied after AI picks, using real Steam data
+    if ownership_filter != "any" and all_owned_sets:
+        squad_count = len(all_owned_sets)
+
+        def passes_ownership(game_name):
+            name_lower = game_name.lower()
+            owner_count = sum(1 for owned in all_owned_sets.values() if name_lower in owned)
+            if ownership_filter == "all":
+                return owner_count == squad_count
+            elif ownership_filter == "some":
+                return owner_count >= 1
+            elif ownership_filter == "none":
+                return owner_count == 0
+            return True
+
+        filtered_picks = [p for p in picks if passes_ownership(p["game"])]
+
+        if not filtered_picks:
+            return jsonify({
+                "ok": False,
+                "error": f"No recommendations passed the ownership filter ({ownership_filter}). "
+                        f"Try linking more Steam profiles or relaxing the filter."
+            }), 200
+
+        # Take up to 4, but surface however many passed rather than failing
+        picks = filtered_picks[:4]
+
+    return jsonify({"ok": True, "picks": picks})
+
+@main.route("/session/<session_hash>/set_steam", methods=["POST"])
+def set_steam(session_hash):
+    game_session = Session.query.filter_by(hash_id=session_hash).first_or_404()
+    participant_token = request.form.get("token")
+    participant = Participant.query.filter_by(token=participant_token).first_or_404()
+
+    raw_input = (request.form.get("steam_input") or "").strip()
+    if not raw_input:
+        participant.steam_id = None
+        db.session.commit()
+        return jsonify({"ok": True})
+
+    api_key = current_app.config.get("STEAM_API_KEY", "")
+    steam_id = resolve_steam_id(raw_input, api_key)
+    if not steam_id:
+        return jsonify({"ok": False, "error": "Could not resolve that Steam profile. Try your Steam64 ID or full profile URL."}), 400
+
+    # Quick validation — make sure the profile is public/reachable
+    try:
+        get_steam_games(steam_id, api_key, top_n=1)
+    except Exception:
+        return jsonify({"ok": False, "error": "Steam profile found but library is private or unreachable."}), 400
+
+    participant.steam_id = steam_id
+    db.session.commit()
+    return jsonify({"ok": True, "steam_id": steam_id})

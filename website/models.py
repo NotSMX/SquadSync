@@ -74,6 +74,7 @@ class Participant(db.Model):
         db.String(32), unique=True,
         default=lambda: secrets.token_hex(16)
     )
+    steam_id = db.Column(db.String(64), nullable=True)
 
     def __repr__(self):
         """Return string representation."""

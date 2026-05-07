@@ -402,17 +402,17 @@ def _notify_and_flash(session_obj):
         flash(f"Failed to email {name}: {reason}", "danger")
 
     return sent_count, failed
-
-
 @main.route("/auto_pick/<session_hash>")
 def auto_pick(session_hash):
-    """Auto-pick the first time slot that works for all participants."""
+    """Auto-pick a time slot based on the selected strategy."""
     session_obj = Session.query.filter_by(hash_id=session_hash).first_or_404()
     participant_token = request.args.get('token')
     participant = Participant.query.filter_by(token=participant_token).first_or_404()
 
     if participant.id != session_obj.host_id:
         return "Unauthorized", 403
+
+    mode = request.args.get('mode', 'everyone')  # everyone | soonest | biggest
 
     participants_with_avail = [
         [(a.start_time, a.end_time) for a in p.availabilities
@@ -428,28 +428,91 @@ def auto_pick(session_hash):
             session_hash=session_obj.hash_id, token=participant.token
         ))
 
-    overlap = participants_with_avail[0]
-    for other in participants_with_avail[1:]:
-        overlap = _intersect_intervals(overlap, other)
+    squad_size = len(participants_with_avail)
+
+    if mode == 'everyone':
+        # Original behaviour — must work for all
+        overlap = participants_with_avail[0]
+        for other in participants_with_avail[1:]:
+            overlap = _intersect_intervals(overlap, other)
+            if not overlap:
+                break
+
         if not overlap:
-            break
+            flash(
+                "No time works for everyone. Try 'biggest overlap' or manual pick.",
+                "warning"
+            )
+            return redirect(url_for(
+                "main.view_session",
+                session_hash=session_obj.hash_id, token=participant.token
+            ))
 
-    if not overlap:
-        flash(
-            "No time works for everyone. Try manual pick or ask for more availability.",
-            "warning"
-        )
-        return redirect(url_for(
-            "main.view_session",
-            session_hash=session_obj.hash_id, token=participant.token
-        ))
+        start, _ = overlap[0]
+        label = "time that works for everyone"
 
-    start, _ = overlap[0]
+    elif mode == 'soonest':
+        # Find the soonest slot where at least half the squad overlaps
+        best = _best_overlap_slot(participants_with_avail, squad_size, prefer='soonest')
+        if not best:
+            flash("Could not find any overlapping slots.", "warning")
+            return redirect(url_for(
+                "main.view_session",
+                session_hash=session_obj.hash_id, token=participant.token
+            ))
+        start, count = best
+        label = f"soonest time with {count}/{squad_size} available"
+
+    elif mode == 'biggest':
+        overlap = participants_with_avail[0]
+        for other in participants_with_avail[1:]:
+            overlap = _intersect_intervals(overlap, other)
+            if not overlap:
+                break
+
+        if overlap:
+            start, _ = overlap[0]
+            label = "time that works for everyone"
+        else:
+            best = _best_overlap_slot(participants_with_avail, squad_size, prefer='biggest')
+            if not best:
+                flash("Could not find any overlapping slots.", "warning")
+                return redirect(url_for(
+                    "main.view_session",
+                    session_hash=session_obj.hash_id, token=participant.token
+                ))
+            start, count = best
+
+            # Calculate how long the window runs from the picked start
+            def window_duration(start_time):
+                mins = 0
+                t = start_time
+                step = timedelta(minutes=30)
+                while True:
+                    next_t = t + step
+                    still_ok = sum(
+                        1 for blocks in participants_with_avail
+                        if any(s <= t and next_t <= e for s, e in blocks)
+                    ) >= count
+                    if not still_ok:
+                        break
+                    mins += 30
+                    t = next_t
+                return mins
+
+            from datetime import timedelta
+            duration = window_duration(start)
+            hrs, mins = divmod(duration, 60)
+            dur_str = f"{hrs}h {mins}m" if hrs else f"{mins}m"
+            label = f"longest overlap window — {count}/{squad_size} free for {dur_str}"
+
+    else:
+        return "Invalid mode", 400
+
     session_obj.final_time = start
     db.session.commit()
     flash(
-        f"Session set to {start.strftime('%A, %B %d at %I:%M %p')} "
-        "(time that works for everyone).",
+        f"Session set to {start.strftime('%A, %B %d at %I:%M %p')} ({label}).",
         "success"
     )
     _notify_and_flash(session_obj)
@@ -458,6 +521,75 @@ def auto_pick(session_hash):
         "main.view_session", session_hash=session_obj.hash_id, token=participant.token
     ))
 
+def _best_overlap_slot(participants_avail, squad_size, prefer='biggest'):
+    from datetime import timedelta
+
+    if prefer == 'soonest':
+        # Existing logic — find soonest slot meeting threshold
+        candidates = set()
+        for blocks in participants_avail:
+            for start, end in blocks:
+                t = start
+                while t < end:
+                    candidates.add(t)
+                    t += timedelta(minutes=30)
+
+        if not candidates:
+            return None
+
+        min_threshold = max(2, squad_size // 2)
+
+        def count_available(slot):
+            return sum(
+                1 for blocks in participants_avail
+                if any(s <= slot < e for s, e in blocks)
+            )
+
+        for slot in sorted(candidates):
+            if count_available(slot) >= min_threshold:
+                return slot, count_available(slot)
+        return None
+
+    else:  # biggest — score by continuous person-minutes
+        # Collect all boundary points to find contiguous windows
+        from itertools import chain
+        boundaries = sorted(set(chain.from_iterable(
+            [s, e] for blocks in participants_avail for s, e in blocks
+        )))
+
+        if not boundaries:
+            return None
+
+        best_slot = None
+        best_score = 0  # person-minutes
+
+        for i in range(len(boundaries) - 1):
+            window_start = boundaries[i]
+            window_end   = boundaries[i + 1]
+            duration_mins = (window_end - window_start).total_seconds() / 60
+
+            if duration_mins <= 0:
+                continue
+
+            # Count how many participants are free for this entire window
+            count = sum(
+                1 for blocks in participants_avail
+                if any(s <= window_start and window_end <= e for s, e in blocks)
+            )
+
+            if count < 2:
+                continue
+
+            score = count * duration_mins  # person-minutes
+
+            if score > best_score:
+                best_score = score
+                best_slot = (window_start, count, window_end)
+
+        if not best_slot:
+            return None
+
+        return best_slot[0], best_slot[1]  # (start, count) to match existing return shape
 
 @main.route("/manual_pick/<session_hash>", methods=["POST"])
 def manual_pick(session_hash):
@@ -573,34 +705,34 @@ def join_and_vote(session_hash):
 
 @main.route("/session/<session_hash>/vote_game", methods=["POST"])
 def vote_game(session_hash):
-    """Submit or update a game vote for the session."""
+    """Submit, update, or remove a game vote for the session."""
     game_session = Session.query.filter_by(hash_id=session_hash).first_or_404()
     participant_token = request.args.get("token") or request.form.get("token")
     participant = Participant.query.filter_by(
         session_id=game_session.id, token=participant_token
     ).first_or_404()
+
     game_name = (request.form.get("game_name") or "").strip() or None
 
-    if not game_name:
-        flash("Enter a game name to vote.", "warning")
-        return redirect(url_for(
-            "main.view_session", session_hash=session_hash, token=participant_token
-        ))
-
-    vote = GameVote.query.filter_by(
+    # Always delete existing vote first
+    GameVote.query.filter_by(
         session_id=game_session.id, participant_id=participant.id
-    ).first()
-    if vote:
-        vote.game_name = game_name
-    else:
+    ).delete()
+
+    # Only re-create if a name was provided
+    if game_name:
         db.session.add(GameVote(
             session_id=game_session.id,
             participant_id=participant.id,
             game_name=game_name
         ))
+
     db.session.commit()
-    flash("Vote saved.", "success")
     _emit_state(session_hash)
+
+    # Support both fetch() calls (JSON) and old form submissions (redirect)
+    if request.accept_mimetypes.accept_json and not request.accept_mimetypes.accept_html:
+        return jsonify({"ok": True})
     return redirect(url_for(
         "main.view_session", session_hash=session_hash, token=participant_token
     ))
@@ -737,6 +869,52 @@ def remove_availability_from_calendar(session_hash):
         "main.view_session", session_hash=session_hash, token=participant_token
     ))
 
+@main.route("/session/<session_hash>/resize_availability", methods=["POST"])
+def resize_availability(session_hash):
+    """Atomically replace an availability block (for calendar resize/drag)."""
+    game_session = Session.query.filter_by(hash_id=session_hash).first_or_404()
+    participant_token = request.form.get("token")
+    participant = Participant.query.filter_by(
+        session_id=game_session.id, token=participant_token
+    ).first_or_404()
+
+    old_start_str = (request.form.get("old_start") or "").strip().replace("Z", "+00:00")
+    old_end_str   = (request.form.get("old_end")   or "").strip().replace("Z", "+00:00")
+    new_start_str = (request.form.get("new_start") or "").strip().replace("Z", "+00:00")
+    new_end_str   = (request.form.get("new_end")   or "").strip().replace("Z", "+00:00")
+
+    is_xhr = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+    def fail(msg):
+        return ({"ok": False, "error": msg}, 400) if is_xhr else ("Bad request", 400)
+
+    try:
+        old_start = strip_tz(datetime.fromisoformat(old_start_str))
+        old_end   = strip_tz(datetime.fromisoformat(old_end_str))
+        new_start = strip_tz(datetime.fromisoformat(new_start_str))
+        new_end   = strip_tz(datetime.fromisoformat(new_end_str))
+    except ValueError:
+        return fail("Invalid time format.")
+
+    if new_start >= new_end:
+        return fail("End must be after start.")
+
+    block = Availability.query.filter_by(
+        session_id=game_session.id,
+        participant_id=participant.id,
+        start_time=old_start,
+        end_time=old_end
+    ).first()
+
+    if not block:
+        return fail("Original availability block not found.")
+
+    block.start_time = new_start
+    block.end_time   = new_end
+    db.session.commit()
+
+    _emit_state(session_hash)  # single emission after both changes
+    return ({"ok": True} if is_xhr else ("", 204))
 
 # @main.route("/session/<session_hash>/availability_data")
 # def availability_data(session_hash):

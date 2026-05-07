@@ -311,14 +311,57 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         },
         
-        eventDrop: function(info) {
+        eventResize: function(info) {
             window.usedCalendar = true;
-            if (window.isExperiment) {
-                // Use extendedProps keys for matching — they're set at create-time
-                // and avoid any UTC-vs-local-offset mismatch with .toISOString().
+
+            if (window.isExperiment || !token) {
                 var oldStart = info.oldEvent.extendedProps.startStr || info.oldEvent.startStr.slice(0, 19);
                 var oldEnd   = info.oldEvent.extendedProps.endStr   || info.oldEvent.endStr.slice(0, 19);
+                var newStart = info.event.startStr.slice(0, 19);
+                var newEnd   = info.event.endStr.slice(0, 19);
+                window.tempBlocks = window.tempBlocks.map(function(b) {
+                    return (b.start === oldStart && b.end === oldEnd)
+                        ? { start: newStart, end: newEnd } : b;
+                });
+                info.event.setExtendedProp('startStr', newStart);
+                info.event.setExtendedProp('endStr', newEnd);
+                return;
+            }
 
+            var oldStart = (info.oldEvent.extendedProps && info.oldEvent.extendedProps.startStr)
+                ? info.oldEvent.extendedProps.startStr : toLocalISOString(info.oldEvent.start);
+            var oldEnd = (info.oldEvent.extendedProps && info.oldEvent.extendedProps.endStr)
+                ? info.oldEvent.extendedProps.endStr : toLocalISOString(info.oldEvent.end);
+            var newStart = info.event.startStr.slice(0, 19);
+            var newEnd   = info.event.endStr.slice(0, 19);
+
+            var fd = new FormData();
+            fd.append('token', token);
+            fd.append('old_start', oldStart);
+            fd.append('old_end',   oldEnd);
+            fd.append('new_start', newStart);
+            fd.append('new_end',   newEnd);
+
+            fetch('/session/' + sessionHash + '/resize_availability', {
+                method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(r => r.json())
+            .then(function(data) {
+                if (!data || data.ok === false) { info.revert(); return; }
+                info.event.setExtendedProp('startStr', newStart);
+                info.event.setExtendedProp('endStr',   newEnd);
+                info.event.setExtendedProp('sources',  null);
+            })
+            .catch(function() { info.revert(); });
+        },
+
+        eventDrop: function(info) {
+            window.usedCalendar = true;
+
+            // ── EXPERIMENT MODE ───────────────────────────────────────────────
+            if (window.isExperiment) {
+                var oldStart = info.oldEvent.extendedProps.startStr || info.oldEvent.startStr.slice(0, 19);
+                var oldEnd   = info.oldEvent.extendedProps.endStr   || info.oldEvent.endStr.slice(0, 19);
                 var newStart = info.event.startStr;
                 var newEnd   = info.event.endStr;
 
@@ -330,125 +373,108 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
 
                 document.dispatchEvent(new CustomEvent('synq:availability', {
-                    detail: {
-                        [myName]: window.tempBlocks
-                    }
+                    detail: { [myName]: window.tempBlocks }
                 }));
-
                 return;
             }
-            // UNAUTHENTICATED FLOW — blocks are local only, just update tempBlocks
+
+            // ── UNAUTHENTICATED — local only ──────────────────────────────────
             if (!token) {
                 var oldStart = info.oldEvent.extendedProps.startStr || info.oldEvent.startStr.slice(0, 19);
                 var oldEnd   = info.oldEvent.extendedProps.endStr   || info.oldEvent.endStr.slice(0, 19);
-                var dropNewStart = info.event.startStr.slice(0, 19);
-                var dropNewEnd   = info.event.endStr.slice(0, 19);
+                var newStart = info.event.startStr.slice(0, 19);
+                var newEnd   = info.event.endStr.slice(0, 19);
 
                 window.tempBlocks = window.tempBlocks.map(function(b) {
                     if (b.start === oldStart && b.end === oldEnd) {
-                        return { start: dropNewStart, end: dropNewEnd };
+                        return { start: newStart, end: newEnd };
                     }
                     return b;
                 });
 
-                info.event.setExtendedProp('startStr', dropNewStart);
-                info.event.setExtendedProp('endStr', dropNewEnd);
+                info.event.setExtendedProp('startStr', newStart);
+                info.event.setExtendedProp('endStr',   newEnd);
                 return;
             }
 
-            if (!window.isExperiment) {
-                if (info.event.title !== myName && info.event.title !== window.squadScheduleMyName) {
-                    info.revert();
-                    return;
-                }
+            // ── GUARD — only own blocks ───────────────────────────────────────
+            if (info.event.title !== myName && info.event.title !== window.squadScheduleMyName) {
+                info.revert();
+                return;
             }
 
-            var removePromises = [];
-
+            var newStart = info.event.startStr.slice(0, 19);
+            var newEnd   = info.event.endStr.slice(0, 19);
             var oldSources = info.oldEvent.extendedProps.sources;
 
+            // ── MERGED BLOCK — multiple source blocks need individual updates ─
             if (oldSources && oldSources.length > 0) {
-                // Remove all original source blocks if this event was merged
-                removePromises = oldSources.map(function(src) {
+                // For merged blocks we can't use a single resize call since there
+                // are multiple DB rows. Remove all sources then add one new block.
+                var removePromises = oldSources.map(function(src) {
                     var fd = new FormData();
                     fd.append('token', token);
                     fd.append('start', src.start.slice(0, 19));
-                    fd.append('end', src.end.slice(0, 19));
-
+                    fd.append('end',   src.end.slice(0, 19));
                     return fetch('/session/' + sessionHash + '/remove_availability', {
-                        method: 'POST',
-                        body: fd,
+                        method: 'POST', body: fd,
                         headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                    }).then(r => r.json());
+                    }).then(function(r) { return r.json(); });
                 });
-            } else {
-                // Fallback for normal single-block event
-                var oldFd = new FormData();
-                oldFd.append('token', token);
 
-                var oldStart = (info.oldEvent.extendedProps && info.oldEvent.extendedProps.startStr)
-                    ? info.oldEvent.extendedProps.startStr
-                    : toLocalISOString(info.oldEvent.start);
+                Promise.all(removePromises)
+                    .then(function(results) {
+                        if (results.some(function(d) { return !d || d.ok === false; })) {
+                            info.revert();
+                            return Promise.reject('remove failed');
+                        }
+                        var fd = new FormData();
+                        fd.append('token', token);
+                        fd.append('start', newStart);
+                        fd.append('end',   newEnd);
+                        return fetch('/session/' + sessionHash + '/add_availability', {
+                            method: 'POST', body: fd,
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                        }).then(function(r) { return r.json(); });
+                    })
+                    .then(function(addData) {
+                        if (!addData || addData.ok === false) { info.revert(); return; }
+                        info.event.setExtendedProp('startStr', newStart);
+                        info.event.setExtendedProp('endStr',   newEnd);
+                        info.event.setExtendedProp('sources',  null);
+                    })
+                    .catch(function() { info.revert(); });
 
-                var oldEnd = (info.oldEvent.extendedProps && info.oldEvent.extendedProps.endStr)
-                    ? info.oldEvent.extendedProps.endStr
-                    : toLocalISOString(info.oldEvent.end);
-
-                oldFd.append('start', oldStart);
-                oldFd.append('end', oldEnd);
-
-                removePromises = [
-                    fetch('/session/' + sessionHash + '/remove_availability', {
-                        method: 'POST',
-                        body: oldFd,
-                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                    }).then(r => r.json())
-                ];
+                return;
             }
 
-            Promise.all(removePromises)
-                .then(function(results) {
-                    if (results.some(function(d) { return !d || d.ok === false; })) {
-                        info.revert();
-                        return;
-                    }
+            // ── SINGLE BLOCK — atomic resize_availability, one emit ───────────
+            var oldStart = (info.oldEvent.extendedProps && info.oldEvent.extendedProps.startStr)
+                ? info.oldEvent.extendedProps.startStr
+                : toLocalISOString(info.oldEvent.start);
+            var oldEnd = (info.oldEvent.extendedProps && info.oldEvent.extendedProps.endStr)
+                ? info.oldEvent.extendedProps.endStr
+                : toLocalISOString(info.oldEvent.end);
 
-                    var newFd = new FormData();
-                    newFd.append('token', token);
+            var fd = new FormData();
+            fd.append('token',     token);
+            fd.append('old_start', oldStart);
+            fd.append('old_end',   oldEnd);
+            fd.append('new_start', newStart);
+            fd.append('new_end',   newEnd);
 
-                    var dropNewStart = info.event.startStr.slice(0, 19);
-                    var dropNewEnd   = info.event.endStr.slice(0, 19);
-
-                    newFd.append('start', dropNewStart);
-                    newFd.append('end', dropNewEnd);
-
-                    return fetch('/session/' + sessionHash + '/add_availability', {
-                        method: 'POST',
-                        body: newFd,
-                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                    });
-                })
-                .then(function(r) {
-                    if (!r) return;
-                    return r.json();
-                })
-                .then(function(addData) {
-                    if (!addData || addData.ok === false) {
-                        info.revert();
-                        return;
-                    }
-
-                    info.event.setExtendedProp('startStr', info.event.startStr.slice(0, 19));
-                    info.event.setExtendedProp('endStr', info.event.endStr.slice(0, 19));
-
-                    // Clear sources since moved block is now a fresh standalone block
-                    info.event.setExtendedProp('sources', null);
-                })
-                .catch(function() {
-                    info.revert();
-                });
-                console.log('remove URL:', '/session/' + sessionHash + '/remove_availability');
-                console.log('oldStart:', oldStart, 'oldEnd:', oldEnd);
+            fetch('/session/' + sessionHash + '/resize_availability', {
+                method: 'POST', body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data || data.ok === false) { info.revert(); return; }
+                info.event.setExtendedProp('startStr', newStart);
+                info.event.setExtendedProp('endStr',   newEnd);
+                info.event.setExtendedProp('sources',  null);
+            })
+            .catch(function() { info.revert(); });
         },
     });
 

@@ -1080,3 +1080,12 @@ input::placeholder {
 .exp-detail-grid b {
   color: #ffffff;
 }
+
+@keyframes pulse-green {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}
+.live-dot-active {
+    background: #22c55e !important;
+    animation: pulse-green 2s ease-in-out infinite;
+}

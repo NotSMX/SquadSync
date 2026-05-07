@@ -2,6 +2,25 @@
 {% block content %}
 
 <div class="panel mb-4 p-4">
+    <div id="live-indicator" style="
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.72rem;
+        color: #6b7280;
+        float: right;
+        margin-top: -0.25rem;
+    ">
+        <span id="live-dot" style="
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #6b7280;
+            display: inline-block;
+            transition: background 0.3s;
+        "></span>
+        <span id="live-label">Connecting…</span>
+    </div>
 
     {# ── SESSION HEADER ───────────────────────────────────────────────────── #}
     <div class="session-header">
@@ -106,17 +125,47 @@
                 <button type="button" class="btn btn-primary" onclick="submitVote()">
                     Submit Vote
                 </button>
+                {% if my_game_vote %}
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="clearVote()" id="clear-vote-btn"
+                        title="Remove your vote">✕</button>
+                {% endif %}
             </div>
             <script>
-            function submitVote() {
-                const gameName = document.getElementById('vote-input').value.trim();
-                if (!gameName) return;
-                const fd = new FormData();
-                fd.append('game_name', gameName);
-                fetch("{{ url_for('main.vote_game', session_hash=session.hash_id) }}?token={{ token }}", {
-                    method: 'POST', body: fd
-                });
-            }
+                function submitVote() {
+                    const input = document.getElementById('vote-input');
+                    const gameName = input.value.trim();
+                    if (!gameName) return;
+                    const fd = new FormData();
+                    fd.append('game_name', gameName);
+                    fetch("{{ url_for('main.vote_game', session_hash=session.hash_id) }}?token={{ token }}", {
+                        method: 'POST', body: fd
+                    }).then(() => {
+                        // Show clear button if not already visible
+                        let btn = document.getElementById('clear-vote-btn');
+                        if (!btn) {
+                            btn = document.createElement('button');
+                            btn.id = 'clear-vote-btn';
+                            btn.type = 'button';
+                            btn.className = 'btn btn-outline-danger btn-sm';
+                            btn.title = 'Remove your vote';
+                            btn.textContent = '✕';
+                            btn.onclick = clearVote;
+                            input.parentElement.appendChild(btn);
+                        }
+                    });
+                }
+
+                function clearVote() {
+                    const fd = new FormData();
+                    fd.append('game_name', '');
+                    fetch("{{ url_for('main.vote_game', session_hash=session.hash_id) }}?token={{ token }}", {
+                        method: 'POST', body: fd
+                    }).then(() => {
+                        document.getElementById('vote-input').value = '';
+                        const btn = document.getElementById('clear-vote-btn');
+                        if (btn) btn.remove();
+                    });
+                }
             </script>
             {% if game_tally %}
                 <p class="section-hint mb-2">Current votes:</p>
@@ -354,10 +403,25 @@
         <h4 class="section-title">Host Controls</h4>
         <div class="host-controls-grid">
             <div class="host-control-block">
-                <p class="fw-bold text-white mb-4">Auto Pick Time</p>
-                <p class="small text-white-50 mb-3">Picks a time where everyone overlaps.</p>
-                <a href="{{ url_for('main.auto_pick', session_hash=session.hash_id, token=participant.token) }}"
-                   class="btn btn-primary d-block mx-auto" style="width: 100%;">Auto Pick</a>
+                <p class="fw-bold text-white mb-1">Auto Pick Time</p>
+                <p class="small text-white-50 mb-3">Automatically pick a time based on squad availability.</p>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <a href="{{ url_for('main.auto_pick', session_hash=session.hash_id, token=participant.token, mode='everyone') }}"
+                    class="btn btn-primary btn-sm" style="font-size:0.82rem;">
+                        Everyone overlaps
+                    </a>
+                    <a href="{{ url_for('main.auto_pick', session_hash=session.hash_id, token=participant.token, mode='biggest') }}"
+                    class="btn btn-primary btn-sm" style="font-size:0.82rem; opacity:0.85;">
+                        Biggest overlap window
+                    </a>
+                    <a href="{{ url_for('main.auto_pick', session_hash=session.hash_id, token=participant.token, mode='soonest') }}"
+                    class="btn btn-primary btn-sm" style="font-size:0.82rem; opacity:0.5;">
+                        Soonest overlap
+                    </a>
+                </div>
+                <p class="text-white-50 mt-2 mb-0" style="font-size:0.7rem;">
+                    "Biggest" and "soonest" fall back to partial overlaps if no full overlap exists.
+                </p>
             </div>
             <div class="host-control-block">
                 <p class="fw-bold text-white mb-1">Manual Pick Time</p>
@@ -714,6 +778,31 @@ function disconnectSteam() {
             }
         });
 }
+</script>
+
+<script>
+window.setLiveStatus = function(status) {
+    const dot   = document.getElementById('live-dot');
+    const label = document.getElementById('live-label');
+    if (!dot || !label) return;
+
+    if (status === 'connected') {
+        dot.classList.add('live-dot-active');
+        label.textContent = 'Live';
+        label.style.color = '#22c55e';
+        dot.style.background = '';  // let CSS handle it
+    } else if (status === 'reconnecting') {
+        dot.classList.remove('live-dot-active');
+        dot.style.background = '#f59e0b';
+        label.textContent = 'Reconnecting…';
+        label.style.color = '#f59e0b';
+    } else {
+        dot.classList.remove('live-dot-active');
+        dot.style.background = '#ef4444';
+        label.textContent = 'Disconnected';
+        label.style.color = '#ef4444';
+    }
+};
 </script>
 
 {% endblock %}

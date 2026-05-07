@@ -3101,3 +3101,412 @@ def test_recommend_game_steam_failure_ignored(client, app):
 
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
+
+"""
+Tests for:
+  - _best_overlap_slot (soonest / biggest modes)
+  - auto_pick route (everyone / soonest / biggest modes)
+  - resize_availability route
+
+Run with:
+    pytest test_autopick_and_resize.py -v
+"""
+
+import pytest
+from datetime import datetime, timedelta
+from unittest.mock import patch, MagicMock
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def dt(day, hour, minute=0):
+    """Shorthand: datetime in May 2025."""
+    return datetime(2025, 5, day, hour, minute)
+
+
+def blocks(*pairs):
+    """Build a participant availability list.
+    Each pair is a ((day,hour[,min]), (day,hour[,min])) tuple.
+    Example: blocks(((1,10),(1,12)), ((1,14),(1,16)))
+    """
+    return [(dt(*s), dt(*e)) for s, e in pairs]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _best_overlap_slot
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBestOverlapSlotSoonest:
+
+    def _call(self, participants_avail, squad_size):
+        from website.views import _best_overlap_slot
+        return _best_overlap_slot(participants_avail, squad_size, prefer='soonest')
+
+    def test_returns_none_when_no_availability(self):
+        result = self._call([], 3)
+        assert result is None
+
+    def test_returns_none_when_below_threshold(self):
+        # Only 1 person available, squad of 4 → threshold is 2
+        avail = [blocks(((1, 10), (1, 12)))]
+        result = self._call(avail, 4)
+        assert result is None
+
+    def test_returns_soonest_slot_meeting_threshold(self):
+        # Two people free 10-12, one extra free 14-16
+        avail = [
+            blocks(((1, 10), (1, 12))),
+            blocks(((1, 10), (1, 12))),
+            blocks(((1, 14), (1, 16))),
+        ]
+        result = self._call(avail, 3)
+        assert result is not None
+        start, count = result
+        assert start == dt(1, 10)
+        assert count >= 2
+
+    def test_soonest_prefers_earlier_slot(self):
+        # Two windows both with 2 people — should pick earlier one
+        avail = [
+            blocks(((1, 10), (1, 11))),
+            blocks(((1, 10), (1, 11))),
+        ]
+        avail2 = [
+            blocks(((1, 14), (1, 15))),
+            blocks(((1, 14), (1, 15))),
+        ]
+        result1 = self._call(avail, 2)
+        result2 = self._call(avail2, 2)
+        assert result1[0] < result2[0]
+
+    def test_threshold_is_half_squad_minimum_2(self):
+        # Squad of 2 → threshold is max(2, 1) = 2, so both must overlap
+        avail = [
+            blocks(((1, 10), (1, 12))),
+            blocks(((1, 11), (1, 13))),  # only 11-12 overlaps
+        ]
+        result = self._call(avail, 2)
+        assert result is not None
+        start, count = result
+        assert count == 2
+        assert start == dt(1, 11)
+
+    def test_returns_count_of_available_participants(self):
+        avail = [
+            blocks(((1, 9), (1, 12))),
+            blocks(((1, 9), (1, 12))),
+            blocks(((1, 9), (1, 12))),
+            blocks(((1, 15), (1, 17))),  # not free at 9
+        ]
+        result = self._call(avail, 4)
+        assert result is not None
+        _, count = result
+        assert count == 3
+
+
+class TestBestOverlapSlotBiggest:
+
+    def _call(self, participants_avail, squad_size):
+        from website.views import _best_overlap_slot
+        return _best_overlap_slot(participants_avail, squad_size, prefer='biggest')
+
+    def test_returns_none_when_no_availability(self):
+        result = self._call([], 2)
+        assert result is None
+
+    def test_returns_none_when_no_window_has_2_people(self):
+        # Two people with non-overlapping windows
+        avail = [
+            blocks(((1, 9), (1, 10))),
+            blocks(((1, 11), (1, 12))),
+        ]
+        result = self._call(avail, 2)
+        assert result is None
+
+    def test_picks_longer_window_over_shorter(self):
+        # Window A: 2 people for 3 hours = 360 person-mins
+        # Window B: 2 people for 30 mins = 60 person-mins
+        avail = [
+            [
+                (dt(1, 9),  dt(1, 12)),   # 3hr window
+                (dt(1, 15), dt(1, 15, 30)),  # 30min window
+            ],
+            [
+                (dt(1, 9),  dt(1, 12)),
+                (dt(1, 15), dt(1, 15, 30)),
+            ],
+        ]
+        result = self._call(avail, 2)
+        assert result is not None
+        start, count = result
+        assert start == dt(1, 9)
+
+    def test_picks_more_people_over_fewer_with_same_duration(self):
+        # 3 people for 1 hour (180 person-mins) vs 2 people for 1 hour (120)
+        avail = [
+            blocks(((1, 9), (1, 10))),   # free 9-10
+            blocks(((1, 9), (1, 10))),   # free 9-10
+            blocks(((1, 9), (1, 10))),   # free 9-10
+        ]
+        result = self._call(avail, 3)
+        assert result is not None
+        start, count = result
+        assert count == 3
+        assert start == dt(1, 9)
+
+    def test_person_minutes_beats_headcount(self):
+        # 2 people for 4 hours (480) vs 3 people for 30 mins (90)
+        avail = [
+            [
+                (dt(1, 8), dt(1, 12)),   # 4hr block
+                (dt(1, 14), dt(1, 14, 30)),
+            ],
+            [
+                (dt(1, 8), dt(1, 12)),
+                (dt(1, 14), dt(1, 14, 30)),
+            ],
+            [
+                (dt(1, 14), dt(1, 14, 30)),  # only free for 30-min window
+            ],
+        ]
+        result = self._call(avail, 3)
+        assert result is not None
+        start, count = result
+        # 2-person 4hr window scores higher than 3-person 30min
+        assert start == dt(1, 8)
+        assert count == 2
+
+    def test_returns_start_and_count(self):
+        avail = [
+            blocks(((1, 10), (1, 13))),
+            blocks(((1, 10), (1, 13))),
+        ]
+        result = self._call(avail, 2)
+        assert result is not None
+        assert len(result) == 2
+        start, count = result
+        assert isinstance(start, datetime)
+        assert isinstance(count, int)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# resize_availability route
+# ─────────────────────────────────────────────────────────────────────────────
+
+def make_flask_app():
+    from flask import Flask
+    from flask_sqlalchemy import SQLAlchemy
+
+    app = Flask(__name__)
+    app.config.update(
+        TESTING=True,
+        SECRET_KEY='test',
+        SQLALCHEMY_DATABASE_URI='sqlite:///:memory:',
+        SERVER_NAME='localhost',
+    )
+    return app
+
+
+class TestResizeAvailability:
+    """
+    Tests the resize_availability route logic in isolation using mocks.
+    We patch DB queries to avoid needing a real database.
+    """
+
+    def _make_request(self, app, session_hash, form_data, headers=None):
+        from website.views import main
+        app.register_blueprint(main)
+        with app.test_client() as client:
+            h = {'X-Requested-With': 'XMLHttpRequest'}
+            if headers:
+                h.update(headers)
+            return client.post(
+                f'/session/{session_hash}/resize_availability',
+                data=form_data,
+                headers=h
+            )
+
+    def _mock_session_and_participant(self, session_id=1, participant_id=1):
+        mock_session = MagicMock()
+        mock_session.id = session_id
+
+        mock_participant = MagicMock()
+        mock_participant.id = participant_id
+
+        return mock_session, mock_participant
+
+    def _mock_block(self, start, end):
+        block = MagicMock()
+        block.start_time = start
+        block.end_time = end
+        return block
+
+    def test_successful_resize(self):
+        mock_session, mock_participant = self._mock_session_and_participant()
+        mock_block = self._mock_block(dt(1, 10), dt(1, 12))
+
+        with patch('website.views.Session') as MockSession, \
+             patch('website.views.Participant') as MockParticipant, \
+             patch('website.views.Availability') as MockAvail, \
+             patch('website.views.db') as mock_db, \
+             patch('website.views._emit_state') as mock_emit:
+
+            MockSession.query.filter_by.return_value.first_or_404.return_value = mock_session
+            MockParticipant.query.filter_by.return_value.first_or_404.return_value = mock_participant
+            MockAvail.query.filter_by.return_value.first.return_value = mock_block
+
+            from flask import Flask
+            app = Flask(__name__)
+            app.config['TESTING'] = True
+            app.config['SECRET_KEY'] = 'test'
+
+            with app.test_request_context('/session/abc/resize_availability',
+                method='POST',
+                data={
+                    'token': 'tok123',
+                    'old_start': '2025-05-01T10:00:00',
+                    'old_end':   '2025-05-01T12:00:00',
+                    'new_start': '2025-05-01T10:00:00',
+                    'new_end':   '2025-05-01T13:00:00',
+                },
+                headers={'X-Requested-With': 'XMLHttpRequest'}
+            ):
+                from website.views import resize_availability
+                response = resize_availability('abc')
+
+            assert mock_block.end_time == dt(1, 13)
+            mock_db.session.commit.assert_called_once()
+            mock_emit.assert_called_once_with('abc')
+
+    def test_rejects_when_new_end_before_start(self):
+        mock_session, mock_participant = self._mock_session_and_participant()
+
+        with patch('website.views.Session') as MockSession, \
+             patch('website.views.Participant') as MockParticipant, \
+             patch('website.views._emit_state') as mock_emit:
+
+            MockSession.query.filter_by.return_value.first_or_404.return_value = mock_session
+            MockParticipant.query.filter_by.return_value.first_or_404.return_value = mock_participant
+
+            from flask import Flask
+            app = Flask(__name__)
+            app.config['TESTING'] = True
+            app.config['SECRET_KEY'] = 'test'
+
+            with app.test_request_context('/session/abc/resize_availability',
+                method='POST',
+                data={
+                    'token': 'tok123',
+                    'old_start': '2025-05-01T10:00:00',
+                    'old_end':   '2025-05-01T12:00:00',
+                    'new_start': '2025-05-01T13:00:00',
+                    'new_end':   '2025-05-01T11:00:00',  # end before start
+                },
+                headers={'X-Requested-With': 'XMLHttpRequest'}
+            ):
+                from website.views import resize_availability
+                response = resize_availability('abc')
+
+            mock_emit.assert_not_called()
+
+    def test_rejects_when_block_not_found(self):
+        mock_session, mock_participant = self._mock_session_and_participant()
+
+        with patch('website.views.Session') as MockSession, \
+             patch('website.views.Participant') as MockParticipant, \
+             patch('website.views.Availability') as MockAvail, \
+             patch('website.views._emit_state') as mock_emit:
+
+            MockSession.query.filter_by.return_value.first_or_404.return_value = mock_session
+            MockParticipant.query.filter_by.return_value.first_or_404.return_value = mock_participant
+            MockAvail.query.filter_by.return_value.first.return_value = None  # not found
+
+            from flask import Flask
+            app = Flask(__name__)
+            app.config['TESTING'] = True
+            app.config['SECRET_KEY'] = 'test'
+
+            with app.test_request_context('/session/abc/resize_availability',
+                method='POST',
+                data={
+                    'token': 'tok123',
+                    'old_start': '2025-05-01T10:00:00',
+                    'old_end':   '2025-05-01T12:00:00',
+                    'new_start': '2025-05-01T10:00:00',
+                    'new_end':   '2025-05-01T14:00:00',
+                },
+                headers={'X-Requested-With': 'XMLHttpRequest'}
+            ):
+                from website.views import resize_availability
+                response = resize_availability('abc')
+
+            mock_emit.assert_not_called()
+
+    def test_rejects_invalid_datetime_format(self):
+        mock_session, mock_participant = self._mock_session_and_participant()
+
+        with patch('website.views.Session') as MockSession, \
+             patch('website.views.Participant') as MockParticipant, \
+             patch('website.views._emit_state') as mock_emit:
+
+            MockSession.query.filter_by.return_value.first_or_404.return_value = mock_session
+            MockParticipant.query.filter_by.return_value.first_or_404.return_value = mock_participant
+
+            from flask import Flask
+            app = Flask(__name__)
+            app.config['TESTING'] = True
+            app.config['SECRET_KEY'] = 'test'
+
+            with app.test_request_context('/session/abc/resize_availability',
+                method='POST',
+                data={
+                    'token': 'tok123',
+                    'old_start': 'not-a-date',
+                    'old_end':   '2025-05-01T12:00:00',
+                    'new_start': '2025-05-01T10:00:00',
+                    'new_end':   '2025-05-01T14:00:00',
+                },
+                headers={'X-Requested-With': 'XMLHttpRequest'}
+            ):
+                from website.views import resize_availability
+                response = resize_availability('abc')
+
+            mock_emit.assert_not_called()
+
+    def test_emits_state_exactly_once_on_success(self):
+        mock_session, mock_participant = self._mock_session_and_participant()
+        mock_block = self._mock_block(dt(1, 10), dt(1, 12))
+
+        with patch('website.views.Session') as MockSession, \
+             patch('website.views.Participant') as MockParticipant, \
+             patch('website.views.Availability') as MockAvail, \
+             patch('website.views.db'), \
+             patch('website.views._emit_state') as mock_emit:
+
+            MockSession.query.filter_by.return_value.first_or_404.return_value = mock_session
+            MockParticipant.query.filter_by.return_value.first_or_404.return_value = mock_participant
+            MockAvail.query.filter_by.return_value.first.return_value = mock_block
+
+            from flask import Flask
+            app = Flask(__name__)
+            app.config['TESTING'] = True
+            app.config['SECRET_KEY'] = 'test'
+
+            with app.test_request_context('/session/abc/resize_availability',
+                method='POST',
+                data={
+                    'token': 'tok123',
+                    'old_start': '2025-05-01T10:00:00',
+                    'old_end':   '2025-05-01T12:00:00',
+                    'new_start': '2025-05-01T10:00:00',
+                    'new_end':   '2025-05-01T15:00:00',
+                },
+                headers={'X-Requested-With': 'XMLHttpRequest'}
+            ):
+                from website.views import resize_availability
+                resize_availability('abc')
+
+            # Critical — must be exactly 1, not 2 (old remove + new add pattern)
+            assert mock_emit.call_count == 1

@@ -7,6 +7,11 @@
     socket.on('connect', function () {
         socket.emit('join', { session_hash: sessionHash });
     });
+    socket.on('connect',           () => window.setLiveStatus?.('connected'));
+    socket.on('disconnect',        () => window.setLiveStatus?.('disconnected'));
+    socket.on('reconnecting',      () => window.setLiveStatus?.('reconnecting'));
+    socket.on('reconnect',         () => window.setLiveStatus?.('connected'));
+    socket.on('connect_error',     () => window.setLiveStatus?.('disconnected'));
 
     socket.on('state_update', function (data) {
         handleStateUpdate(data);
